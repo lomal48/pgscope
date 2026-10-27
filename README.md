@@ -13,6 +13,7 @@
   <img alt="PgBouncer and Pgpool-II" src="https://img.shields.io/badge/also-PgBouncer%20%C2%B7%20Pgpool--II-555">
   <img alt="Self-hosted" src="https://img.shields.io/badge/deployment-self--hosted-6366f1">
   <img alt="UI: Russian and English" src="https://img.shields.io/badge/UI-RU%20%7C%20EN-6366f1">
+  <img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-blue">
 </p>
 
 ![Server overview: key indicators, cluster details, active alerts and activity charts](docs/screenshots/overview.png)
@@ -298,3 +299,8 @@ cd web && npx tsc --noEmit && node scripts/i18n-check.mjs   # UI types, dictiona
 User-visible text is written in Russian, which doubles as the key of the English dictionary: `tr`/`trf` with
 `i18n_en_*.go` on the backend, `t()` with `web/src/i18n/en/*.json` in the UI. Both checkers fail on a missing
 translation.
+
+## License
+
+Copyright 2026 Amirkhan Samigullin. Licensed under the [Apache License, Version 2.0](LICENSE); see also [NOTICE](NOTICE).
+The patches in [`third_party/pgmetrics`](third_party/pgmetrics) modify [pgmetrics](https://github.com/rapidloop/pgmetrics), which is also licensed under Apache 2.0.

@@ -13,6 +13,7 @@
   <img alt="PgBouncer и Pgpool-II" src="https://img.shields.io/badge/also-PgBouncer%20%C2%B7%20Pgpool--II-555">
   <img alt="Self-hosted" src="https://img.shields.io/badge/deployment-self--hosted-6366f1">
   <img alt="Интерфейс: русский и английский" src="https://img.shields.io/badge/UI-RU%20%7C%20EN-6366f1">
+  <img alt="Лицензия: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-blue">
 </p>
 
 ![Обзор сервера: ключевые показатели, сведения о кластере, активные оповещения и графики активности](docs/screenshots/overview.ru.png)
@@ -296,3 +297,8 @@ cd web && npx tsc --noEmit && node scripts/i18n-check.mjs   # типы инте�
 
 Видимые пользователю тексты пишутся по-русски, и русская строка служит ключом английского словаря: `tr`/`trf` и
 `i18n_en_*.go` на сервере, `t()` и `web/src/i18n/en/*.json` в интерфейсе. Обе проверки падают, если перевода нет.
+
+## Лицензия
+
+Copyright 2026 Amirkhan Samigullin. Распространяется по [лицензии Apache 2.0](LICENSE), см. также [NOTICE](NOTICE).
+Патчи в [`third_party/pgmetrics`](third_party/pgmetrics) изменяют [pgmetrics](https://github.com/rapidloop/pgmetrics), который тоже распространяется по Apache 2.0.
