@@ -1,0 +1,57 @@
+# pgscope and the PostgreSQL database it stores its data in.
+#
+#   docker build -t pgscope:latest ..          # once, from a machine with internet access
+#   echo 'PGSCOPE_DB_PASSWORD=...' > .env       # plus PGSCOPE_BASE_URL and anything else below
+#   docker compose up -d
+#
+# Air-gapped hosts: docker save / docker load the pgscope:latest and postgres:17-alpine images.
+# All variables: the "Configuring pgscope" docs page (#/docs/config in the UI, web/src/docs/en/config.md).
+name: pgscope
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pgscope
+      POSTGRES_USER: pgscope
+      POSTGRES_PASSWORD: ${PGSCOPE_DB_PASSWORD:?set PGSCOPE_DB_PASSWORD in .env}
+    volumes:
+      - pgscope-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pgscope -d pgscope"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  pgscope:
+    image: ${PGSCOPE_IMAGE:-pgscope:latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${PGSCOPE_PORT:-8080}:8080"
+    environment:
+      PGSCOPE_DB: postgres://pgscope@db:5432/pgscope?sslmode=disable
+      PGPASSWORD: ${PGSCOPE_DB_PASSWORD}  # read by the driver, so the password needs no URL escaping
+      PGSCOPE_LISTEN: ":8080"
+      PGSCOPE_BASE_URL: ${PGSCOPE_BASE_URL:-http://localhost:8080}
+      PGSCOPE_SIGNUP: ${PGSCOPE_SIGNUP:-first}  # first: only the first account signs up | open | closed
+      PGSCOPE_MIN_REPORT_INTERVAL: ${PGSCOPE_MIN_REPORT_INTERVAL:-60}
+      PGSCOPE_METRICS_RETENTION_DAYS: ${PGSCOPE_METRICS_RETENTION_DAYS:-90}
+      PGSCOPE_REPORT_RETENTION_DAYS: ${PGSCOPE_REPORT_RETENTION_DAYS:-14}
+      PGSCOPE_MAX_REPORT_MB: ${PGSCOPE_MAX_REPORT_MB:-256}  # largest report accepted, compressed or not
+      PGSCOPE_SMTP_ADDR: ${PGSCOPE_SMTP_ADDR:-}
+      PGSCOPE_SMTP_USER: ${PGSCOPE_SMTP_USER:-}
+      PGSCOPE_SMTP_PASS: ${PGSCOPE_SMTP_PASS:-}
+      PGSCOPE_SMTP_FROM: ${PGSCOPE_SMTP_FROM:-pgscope@localhost}
+      # AI chat stays off unless PGSCOPE_AI_KEY is set. It calls the Anthropic API (beta features included), so the
+      # server's report leaves your network; PGSCOPE_AI_BASE_URL only routes those calls through a proxy to Anthropic.
+      # In a closed perimeter keep PGSCOPE_AI_KEY unset.
+      PGSCOPE_AI_KEY: ${PGSCOPE_AI_KEY:-}
+      PGSCOPE_AI_MODEL: ${PGSCOPE_AI_MODEL:-}
+      PGSCOPE_AI_BASE_URL: ${PGSCOPE_AI_BASE_URL:-}
+
+volumes:
+  pgscope-data:

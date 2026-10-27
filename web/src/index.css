@@ -1,0 +1,131 @@
+@import "tailwindcss";
+@import "uplot/dist/uPlot.min.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+  --bg: #f6f6f8;
+  --panel: #ffffff;
+  --panel-2: #f2f3f5;
+  --line: #e4e5e9;
+  --fg: #0d0e12;
+  --muted: #565a66;
+  --faint: #8a8e99;
+  --accent: #5b5bf0;
+  --good: #15803d;
+  --warn: #b45309;
+  --crit: #dc2626;
+  --info: #2563eb;
+  /* categorical chart slots, fixed order (validated palette, light steps) */
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+  --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
+}
+.dark {
+  color-scheme: dark;
+  --bg: #09090b;
+  --panel: #111114;
+  --panel-2: #18181c;
+  --line: #26262c;
+  --fg: #f4f4f6;
+  --muted: #a3a3ad;
+  --faint: #6f6f7a;
+  --accent: #7c7cf8;
+  --good: #22c55e;
+  --warn: #f59e0b;
+  --crit: #f87171;
+  --info: #60a5fa;
+  /* same hues, stepped for the dark surface */
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+  --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-crit: var(--crit);
+  --color-info: var(--info);
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html, body, #root { height: 100%; }
+body { @apply bg-bg text-fg font-sans antialiased text-[13.5px]; }
+::selection { background: color-mix(in oklab, var(--accent) 30%, transparent); }
+
+@layer components {
+  .card { @apply bg-panel border border-line rounded-xl; }
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-lg text-[13px] font-medium
+      border border-line bg-panel text-fg hover:bg-panel-2 transition-colors disabled:opacity-50 disabled:pointer-events-none
+      cursor-pointer whitespace-nowrap;
+  }
+  .btn-primary { @apply bg-accent text-white border-transparent hover:bg-accent hover:brightness-110; }
+  .btn-danger { @apply text-crit hover:bg-crit/10; }
+  .btn-ghost { @apply border-transparent bg-transparent hover:bg-panel-2; }
+  .btn-sm { @apply h-7 px-2 text-xs; }
+  .input {
+    @apply h-8 px-2.5 rounded-lg border border-line bg-panel text-fg text-[13px] outline-none
+      focus:border-accent focus:ring-2 focus:ring-accent/25 placeholder:text-faint min-w-0;
+  }
+  .label { @apply text-xs font-medium text-muted; }
+  .link { @apply text-accent hover:underline underline-offset-2 cursor-pointer; }
+  .mono { @apply font-mono text-[12px]; }
+  .nav-item {
+    @apply flex items-center gap-2.5 px-2.5 h-8 rounded-lg text-[13px] text-muted hover:text-fg hover:bg-panel-2 transition-colors;
+  }
+  .nav-item.active { @apply bg-accent/10 text-accent font-medium; }
+}
+
+/* uPlot theming */
+.uplot { font-family: inherit; }
+.u-legend { font-size: 11.5px; color: var(--muted); text-align: left; padding: 4px 0 0 4px; }
+.u-legend .u-series { padding: 1px 8px 1px 0; }
+.u-legend .u-series th { font-weight: 500; }
+.u-legend .u-series td { font-variant-numeric: tabular-nums; color: var(--fg); }
+.u-legend .u-marker { width: 10px; height: 3px; border-radius: 2px; margin-right: 6px; }
+.u-legend .u-series:first-child { display: none; }
+.u-select { background: color-mix(in oklab, var(--accent) 15%, transparent); }
+.u-cursor-x, .u-cursor-y { border-color: var(--faint) !important; }
+
+/* documentation pages (rendered markdown, pages/Docs.tsx) */
+.doc { font-size: 14.5px; line-height: 1.7; }
+.doc > * + * { margin-top: 1em; }
+.doc h2 { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; margin-top: 2.2em; padding-top: 1.1em; border-top: 1px solid var(--line); }
+.doc h3 { font-size: 16px; font-weight: 600; line-height: 1.4; margin-top: 1.8em; }
+.doc h4 { font-weight: 600; margin-top: 1.5em; }
+.doc :is(h2, h3, h4) { scroll-margin-top: 16px; }
+.doc .doc-anchor { margin-left: .4em; color: var(--faint); opacity: 0; font-weight: 400; }
+.doc :is(h2, h3, h4):hover .doc-anchor { opacity: 1; }
+.doc a { color: var(--accent); text-underline-offset: 2px; }
+.doc a:hover { text-decoration: underline; }
+.doc ul { list-style: disc; padding-left: 1.4em; }
+.doc ol { list-style: decimal; padding-left: 1.4em; }
+.doc li + li, .doc li > :is(ul, ol, p + p) { margin-top: .35em; }
+.doc li::marker { color: var(--faint); }
+.doc strong { font-weight: 600; }
+.doc :not(pre) > code { font-family: var(--font-mono); font-size: .86em; background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px; padding: .05em .35em; overflow-wrap: anywhere; }
+.doc pre { position: relative; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; overflow-x: auto; }
+.doc .doc-copy { position: absolute; top: 6px; right: 6px; font-family: var(--font-sans); font-size: 11px; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); opacity: 0; cursor: pointer; transition: opacity .15s; }
+.doc pre:hover .doc-copy, .doc .doc-copy:focus-visible { opacity: 1; }
+.doc .doc-table { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+.doc table { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 1.5; }
+.doc th { text-align: left; font-weight: 600; background: var(--panel-2); }
+.doc :is(th, td) { padding: 7px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.doc tr:last-child td { border-bottom: 0; }
+.doc blockquote { border-left: 3px solid var(--line); padding-left: 1em; color: var(--muted); }
+.doc hr { border: 0; border-top: 1px solid var(--line); }
+.doc p:empty { display: none; }
+.doc .callout { --c: var(--info); border: 1px solid color-mix(in oklab, var(--c) 35%, transparent); border-left: 3px solid var(--c); background: color-mix(in oklab, var(--c) 6%, transparent); border-radius: 10px; padding: 10px 14px; color: var(--fg); }
+.doc .callout > * + * { margin-top: .5em; }
+.doc .callout-tip { --c: var(--good); }
+.doc :is(.callout-warning, .callout-caution) { --c: var(--warn); }
+.doc .callout-title { color: var(--c); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; }

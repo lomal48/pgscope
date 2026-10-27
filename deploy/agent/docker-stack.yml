@@ -1,0 +1,61 @@
+# pgscope-agent for a Docker Swarm cluster: a global service, one task per node; each task
+# handles the containers of its own node. Setup: the "Docker and Docker Swarm" docs page (#/docs/docker in the UI).
+#
+#   printf '%s' 'API key from the pgscope profile' | docker secret create pgscope_api_key -
+#   printf '%s' 'pgscope_monitor password'         | docker secret create pgscope_monitor_password -
+#   PGSCOPE_URL=https://pgscope.example.com PGSCOPE_AGENT_CLUSTER=prod-swarm \
+#     docker stack deploy -c docker-stack.yml pgscope-agent
+#
+# The pgscope-agent image must exist on every node (registry, or docker load on each node).
+version: "3.8"
+
+services:
+  agent:
+    image: ${PGSCOPE_AGENT_IMAGE:-pgscope-agent:latest}
+    environment:
+      PGSCOPE_URL: ${PGSCOPE_URL:?set PGSCOPE_URL}
+      # Prefix of every server name; must be the same on all nodes (workers cannot read the Swarm cluster id).
+      PGSCOPE_AGENT_CLUSTER: ${PGSCOPE_AGENT_CLUSTER:?set PGSCOPE_AGENT_CLUSTER to the cluster name}
+      PGSCOPE_AGENT_INTERVAL: ${PGSCOPE_AGENT_INTERVAL:-300}
+      PGSCOPE_AGENT_DISCOVERY_INTERVAL: ${PGSCOPE_AGENT_DISCOVERY_INTERVAL:-30}
+      PGSCOPE_AGENT_LABEL_SELECTOR: ${PGSCOPE_AGENT_LABEL_SELECTOR:-pgscope.enable=true}
+      PGSCOPE_AGENT_QUERY_TIMEOUT: ${PGSCOPE_AGENT_QUERY_TIMEOUT:-30}  # pgmetrics -t, seconds
+      # Swarm tasks cannot join networks at runtime: list the database overlays below instead.
+      PGSCOPE_AGENT_AUTOCONNECT: "false"
+      PGSCOPE_AGENT_SSLMODE: ${PGSCOPE_AGENT_SSLMODE:-prefer}
+      PGSCOPE_AGENT_CONCURRENCY: ${PGSCOPE_AGENT_CONCURRENCY:-4}
+      PGSCOPE_AGENT_PGMETRICS_ARGS: ${PGSCOPE_AGENT_PGMETRICS_ARGS:-}
+    secrets:
+      - pgscope_api_key
+      - pgscope_monitor_password
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+    # Every overlay network with monitored databases, plus "default" (the way to pgscope).
+    networks:
+      - default
+      # - app_backend
+    deploy:
+      mode: global
+      restart_policy:
+        condition: any
+        delay: 10s
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+        reservations:
+          memory: 64M
+
+networks:
+  default:
+  # app_backend:
+  #   external: true
+  #   name: myapp_backend   # the real overlay name from `docker network ls`, e.g. <stack>_backend
+
+secrets:
+  pgscope_api_key:
+    external: true
+  pgscope_monitor_password:
+    external: true

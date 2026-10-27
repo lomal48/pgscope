@@ -1,0 +1,24 @@
+# pgscope-agent plus pgmetrics, both built from source.
+#   docker build -f Dockerfile.agent -t pgscope-agent:latest .
+# Air-gapped hosts: build on a connected machine, then move the image with
+#   docker save pgscope-agent:latest | gzip > pgscope-agent.tar.gz   and   docker load -i pgscope-agent.tar.gz
+
+FROM golang:1.27-alpine AS build
+ENV CGO_ENABLED=0
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+# pgmetrics at exactly the version pgscope's go.mod requires, so the report model matches.
+RUN v=$(go list -m -f '{{.Version}}' github.com/rapidloop/pgmetrics) \
+ && GOBIN=/out go install -trimpath -ldflags="-s -w -X main.version=$v" "github.com/rapidloop/pgmetrics/cmd/pgmetrics@$v"
+COPY . .
+ARG VERSION=dev
+RUN go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o /out/pgscope-agent ./cmd/pgscope-agent
+
+FROM alpine:3.22
+RUN apk add --no-cache ca-certificates
+COPY --from=build /out/pgscope-agent /out/pgmetrics /usr/local/bin/
+# Runs as root only because it talks to /var/run/docker.sock; see the "Docker and Docker Swarm" docs page (web/src/docs/en/docker.md)
+# for a docker-socket-proxy setup that does not mount the socket into the agent.
+USER root
+ENTRYPOINT ["pgscope-agent"]

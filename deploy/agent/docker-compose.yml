@@ -1,0 +1,47 @@
+# pgscope-agent for one standalone Docker host (Docker Compose). It finds running
+# containers labelled pgscope.enable=true, runs pgmetrics against them and sends
+# the reports to pgscope. Setup: the "Docker and Docker Swarm" docs page (#/docs/docker in the UI).
+#
+#   mkdir -p secrets
+#   printf '%s' 'API key from the pgscope profile' > secrets/pgscope_api_key
+#   printf '%s' 'pgscope_monitor password'         > secrets/pgscope_monitor_password
+#   chmod 600 secrets/*
+#   echo 'PGSCOPE_URL=https://pgscope.example.com' > .env
+#   docker compose up -d
+name: pgscope-agent
+
+services:
+  agent:
+    image: ${PGSCOPE_AGENT_IMAGE:-pgscope-agent:latest}
+    restart: unless-stopped
+    environment:
+      PGSCOPE_URL: ${PGSCOPE_URL:?set PGSCOPE_URL in .env}
+      PGSCOPE_AGENT_CLUSTER: ${PGSCOPE_AGENT_CLUSTER:-}  # empty: the Docker host name
+      PGSCOPE_AGENT_INTERVAL: ${PGSCOPE_AGENT_INTERVAL:-300}
+      PGSCOPE_AGENT_DISCOVERY_INTERVAL: ${PGSCOPE_AGENT_DISCOVERY_INTERVAL:-30}
+      PGSCOPE_AGENT_LABEL_SELECTOR: ${PGSCOPE_AGENT_LABEL_SELECTOR:-pgscope.enable=true}
+      PGSCOPE_AGENT_QUERY_TIMEOUT: ${PGSCOPE_AGENT_QUERY_TIMEOUT:-30}  # pgmetrics -t, seconds
+      PGSCOPE_AGENT_AUTOCONNECT: ${PGSCOPE_AGENT_AUTOCONNECT:-true}
+      PGSCOPE_AGENT_SSLMODE: ${PGSCOPE_AGENT_SSLMODE:-prefer}
+      PGSCOPE_AGENT_CONCURRENCY: ${PGSCOPE_AGENT_CONCURRENCY:-4}
+      PGSCOPE_AGENT_PGMETRICS_ARGS: ${PGSCOPE_AGENT_PGMETRICS_ARGS:-}
+    secrets:
+      - pgscope_api_key           # -> /run/secrets/pgscope_api_key
+      - pgscope_monitor_password  # -> /run/secrets/pgscope_monitor_password
+    volumes:
+      # Full Docker API access (":ro" would not restrict it). Socket proxy alternative: #/docs/docker.
+      - /var/run/docker.sock:/var/run/docker.sock
+    # With PGSCOPE_AGENT_AUTOCONNECT=false list the database networks here (keep "default",
+    # it is the way to pgscope) and declare them below as external:
+    # networks: [default, app_backend]
+
+# networks:
+#   app_backend:
+#     external: true
+#     name: myapp_backend   # the real network name from `docker network ls`
+
+secrets:
+  pgscope_api_key:
+    file: ./secrets/pgscope_api_key
+  pgscope_monitor_password:
+    file: ./secrets/pgscope_monitor_password

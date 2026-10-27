@@ -1,0 +1,10 @@
+.git
+.idea
+web/node_modules
+web/dist
+pgscope
+pgscope-agent
+**/secrets
+**/.env
+*.tar
+*.tar.gz
