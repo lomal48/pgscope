@@ -163,7 +163,7 @@ diff -ruN a/collector/log_tz_test.go b/collector/log_tz_test.go
 +		}
 +
 +		// csvlog: the entry is inside the log span and keeps its time
-+		f := make([]string, 26)
++		f := make([]string, 23)
 +		f[0], f[11], f[13] = now.In(loc).Format("2006-01-02 15:04:05.000 MST"), "LOG", "checkpoint starting: time"
 +		path := filepath.Join(t.TempDir(), "postgresql.csv")
 +		if err := os.WriteFile(path, []byte(strings.Join(f, ",")+"\n"), 0o600); err != nil {
