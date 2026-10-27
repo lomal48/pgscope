@@ -38,7 +38,7 @@ docker build -t pgscope:latest .
 docker build -f Dockerfile.agent --build-arg VERSION=1.0.0 -t pgscope-agent:latest .
 ```
 
-- The agent image is based on `alpine:3.22` and contains only `pgscope-agent`, pgmetrics and root certificates. pgmetrics is built from source at exactly the version pgscope uses (per `go.mod`), so the report model matches.
+- The agent image is based on `alpine:3.22` and contains only `pgscope-agent`, pgmetrics and root certificates. pgmetrics is built from source at exactly the version pgscope uses (per `go.mod`), so the report model matches. The `tools/build-pgmetrics.sh` script builds it with pgscope's fixes (including reading PostgreSQL 13+ `csvlog`); this pgmetrics can also be copied to database hosts, see [pgmetrics built by pgscope](collect.md#pgmetrics-build).
 - `VERSION` ends up in the **Agent version** field on the **Agents** page. Without it the version is `dev`.
 
 For a closed network, move the images as files:
@@ -334,7 +334,7 @@ PGSCOPE_URL=https://pgscope.example.com PGSCOPE_AGENT_CLUSTER=prod-swarm \
 | `PGMETRICS` | `pgmetrics` | path to pgmetrics |
 | `SSL_CERT_FILE` | — | PEM file with an internal CA certificate if pgscope's HTTPS is signed by it; mount the file into the agent container |
 
-All other agent environment variables except `PGSCOPE_*` are passed to pgmetrics as is (for example, `PGSSLROOTCERT`). The agent itself sets `PGPASSWORD`, `PGSSLMODE`, `PGAPPNAME=pgscope-agent` and `PGCONNECT_TIMEOUT=10` for pgmetrics. `PGAPPNAME` has no effect on pgmetrics: it always connects with `application_name=pgmetrics`. Only the agent's check session shows up in `pg_stat_activity` with `application_name=pgscope-agent`.
+All other agent environment variables except `PGSCOPE_*` are passed to pgmetrics as is (for example, `PGSSLROOTCERT`). The agent itself sets `PGPASSWORD`, `PGSSLMODE` and `PGCONNECT_TIMEOUT=10` for pgmetrics. pgmetrics sessions show up in `pg_stat_activity` with `application_name=pgmetrics`: pgmetrics always sets it itself, and `PGAPPNAME` does not change that. Only the agent's check session shows up with `application_name=pgscope-agent`.
 
 The compose file and the stack pass only the variables they list into the container, see [Installing on a standalone Docker host](#standalone).
 
@@ -399,6 +399,7 @@ Common texts in **Details**:
 | `role pgscope_monitor may not connect to any database` | grant the role `CONNECT` on the databases you need |
 | `pgscope answered HTTP 429: Reports are being sent too often` | the collection interval is shorter than `PGSCOPE_MIN_REPORT_INTERVAL`, or two sources report under the same name (for example, hosts without `PGSCOPE_AGENT_CLUSTER`) |
 | `pgscope answered HTTP 403: Unknown API key` | update the `pgscope_api_key` secret with the key from **Profile** |
+| `pgscope answered HTTP 413: The report is larger than … MiB, the limit set by PGSCOPE_MAX_REPORT_MB on the pgscope server` | the report exceeds the pgscope limit: shrink the collection with `--omit=bloat`, `-S` or schema and table filters in `PGSCOPE_AGENT_PGMETRICS_ARGS`, or raise `PGSCOPE_MAX_REPORT_MB` on the pgscope server, see [Rate and size limits](collect.md#limits) |
 | `the agent is not on network …; add it to the agent stack …` | Swarm: declare the network in the agent stack, see [Networks in Docker Swarm](#swarm-networks) |
 | `overlay network … is not attachable …` | deploy the agent as a Swarm service or recreate the network with `--attachable` |
 | `network … blocks traffic between containers (enable_icc=false)` | use another network of the database or set it in `pgscope.network` |

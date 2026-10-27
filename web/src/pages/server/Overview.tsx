@@ -24,8 +24,8 @@ export function Overview() {
   const at = R.meta.at
   const sys = R.system
   const alerts = srv.alerts
-  // user_agent is "pgmetrics/1.19.1"; meta.version is only the report schema version
-  const collector = R.meta.user_agent?.replace('/', ' ') || t('pgmetrics (схема отчёта {v})', { v: R.meta.version })
+  // user_agent is "pgmetrics/1.19.1" (+ " pgdash/1.10" when sent by the pgdash CLI); meta.version is only the report schema version
+  const collector = R.meta.user_agent?.split(' ').map((s: string) => s.replace('/', ' ')).join(', ') || t('pgmetrics (схема отчёта {v})', { v: R.meta.version })
 
   return (
     <>

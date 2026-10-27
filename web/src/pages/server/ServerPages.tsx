@@ -423,8 +423,8 @@ export function Logs() {
       <PageHeader title={t('Журнал')} sub={t('Записи журнала PostgreSQL, разобранные pgmetrics за период этого отчёта')} />
       {entries.length === 0 ? (
         <Card><Empty icon={<FileText className="size-8" />} title={t('Нет записей журнала')}>
-          {rich(t('pgmetrics читает журнал PostgreSQL, только если запущен на хосте базы данных и подключается локально (через сокет или 127.0.0.1); {logFile} лишь указывает путь к файлу. Для AWS RDS / Aurora журнал загружается через API RDS с {rdsId}. Формат журнала — stderr ({dest}) с меткой времени в {prefix}: файлы csvlog PostgreSQL 13+ pgmetrics пропускает.'), {
-            logFile: <code className="mono">--log-file</code>, rdsId: <code className="mono">--aws-rds-dbid</code>,
+          {rich(t('pgmetrics читает журнал PostgreSQL, только если запущен на хосте базы данных и подключается локально (через сокет или 127.0.0.1); {logFile} лишь указывает путь к файлу. Для AWS RDS / Aurora журнал загружается через API RDS с {rdsId}. Формат журнала — stderr ({dest}) с меткой времени в {prefix} или csvlog; csvlog PostgreSQL 13+ читает только pgmetrics, собранный pgscope ({build}), официальные выпуски его пропускают.'), {
+            logFile: <code className="mono">--log-file</code>, build: <code className="mono">tools/build-pgmetrics.sh</code>, rdsId: <code className="mono">--aws-rds-dbid</code>,
             dest: <code className="mono">{"log_destination = 'stderr'"}</code>, prefix: <code className="mono">{"log_line_prefix = '%m [%p] %q%u@%d '"}</code>,
           })}
         </Empty></Card>

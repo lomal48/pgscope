@@ -2,3 +2,5 @@ web/node_modules/
 /pgscope
 deploy/**/secrets/
 deploy/**/.env
+.claude/
+.idea/

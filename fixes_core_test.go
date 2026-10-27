@@ -255,9 +255,13 @@ func TestDuplicateIndexes(t *testing.T) {
 		idx("uq", "CREATE UNIQUE INDEX %s ON s.t USING btree (d)"), idx("t_pkey", "CREATE UNIQUE INDEX %s ON s.t USING btree (d)"),
 		idx("t2_pkey", "CREATE UNIQUE INDEX %s ON s.t2 USING btree (e)"), idx("t2_e_key", "CREATE UNIQUE INDEX %s ON s.t2 USING btree (e)"),
 		idx("x_idx", "CREATE INDEX %s ON s.t USING gist (f)"), idx("t_f_excl", "CREATE INDEX %s ON s.t USING gist (f)"),
+		// a non-unique index cannot back a key constraint, whatever its name (same as Objects.tsx)
+		idx("o_idx", "CREATE INDEX %s ON s.t USING btree (g)"), idx("o_g_key", "CREATE INDEX %s ON s.t USING btree (g)"),
+		// an exclusion constraint's index is non-unique: the unique equivalent is kept, neither is proposed
+		idx("t_h_excl", "CREATE INDEX %s ON s.t USING btree (h)"), idx("uh", "CREATE UNIQUE INDEX %s ON s.t USING btree (h)"),
 	}}
 	items, _ := issueItems(diagnose(m, "ru"), "Дублирующиеся индексы")
-	want := []string{"d.s.n повторяет d.s.u", "d.s.p2 повторяет d.s.p1", "d.s.uc повторяет d.s.pk",
+	want := []string{"d.s.n повторяет d.s.u", "d.s.o_g_key повторяет d.s.o_idx", "d.s.p2 повторяет d.s.p1", "d.s.uc повторяет d.s.pk",
 		"d.s.uq повторяет d.s.t_pkey", "d.s.x_idx повторяет d.s.t_f_excl"}
 	if !slices.Equal(items, want) {
 		t.Fatalf("duplicates = %q, want %q", items, want)

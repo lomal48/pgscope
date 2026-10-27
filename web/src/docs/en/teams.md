@@ -8,19 +8,19 @@ pgscope has two kinds of accounts:
 
 | Kind | How it is created | API key | Own servers |
 |---|---|---|---|
-| Regular | sign-up on the **Sign up** page | yes | yes: servers are created by reports sent with this key |
+| Regular | sign-up on the **Sign up** page, if the `PGSCOPE_SIGNUP` setting allows it | yes | yes: servers are created by reports sent with this key |
 | Team member | accepting an invitation link | no | no: sees only the servers shared with it |
 
-A team member account is marked **Team member account** on the Profile page. Such an account cannot get an API key. If a member also needs servers of their own, they need a separate regular account with a different address (addresses must be unique).
+A team member account is marked **Team member account** on the Profile page. Such an account cannot get an API key. If a member also needs servers of their own, they need a separate regular account with a different address (addresses must be unique); if sign-up is closed, an administrator can open it for a while, see [PGSCOPE_SIGNUP](config.md#pgscope-signup).
 
 A regular account can also get access to someone else's server: it then has both its own servers and shared ones (marked with the **shared** badge in the server list).
 
 Rules for all accounts:
 
-- sign-up is open to anyone who can open the pgscope page; there is no administrator role — every user sees only their own servers and the ones shared with them. Restrict network access to pgscope, see [Security](security.md);
+- self-registration is controlled by the server setting `PGSCOPE_SIGNUP`: by default only the first user can sign up, and everyone else comes through invitations (see [PGSCOPE_SIGNUP](config.md#pgscope-signup)). There is no administrator role — every user sees only their own servers and the ones shared with them. Restrict network access to pgscope, see [Security](security.md);
 - the email address is lowercased and must be unique; it is not verified;
-- the password is 8 to 72 bytes in UTF-8 (characters for Latin text; a Cyrillic letter takes 2 bytes);
-- a session lasts 30 days after sign-in; **Sign out** in the sidebar ends only the current session;
+- the password must be at least 8 characters and at most 72 bytes in UTF-8: a Latin letter takes 1 byte and a Cyrillic one 2, so an all-Cyrillic password is at most 36 letters. Otherwise pgscope answers "The password must be at least 8 characters and at most 72 bytes (a Cyrillic character takes 2 bytes)"; the rule is the same for sign-up, accepting an invitation and changing the password;
+- a session lasts 30 days after sign-in; **Sign out** in the sidebar ends only the current session, and changing the password ends all the others;
 - there is no password reset by email (see [Changing the password](#password)).
 
 ## Sharing a server {#sharing}
@@ -34,11 +34,13 @@ Enter an address in **Invite by email** and click **Invite**. There are two case
 - **The person already has a pgscope account** with this address. Access is granted immediately, and the person appears in the list marked **member**. If SMTP is configured, they and the owner get the email "pgscope: you now have access to server “…”" with a link to the server.
 - **There is no account.** An invitation is created: the address appears in the list marked **invited**. If SMTP is configured, the invitee and the owner get the email "pgscope: invitation to server “…”" with the link. The emails are written in the owner's current UI language.
 
+Inviting the same address to the same server again does not create a second invitation: the existing one is refreshed and the same link is sent. The address is lowercased and surrounding spaces are dropped. If you share the server with an address that already has an account, its pending invitation to this server is deleted.
+
 The invitation link looks like `<PGSCOPE_BASE_URL>/#/invite/<token>`. Only the owner sees it, in the list next to the invitation, and can copy it with the copy button. **Invitations work without SMTP**: if email is not configured, the form shows "SMTP is not configured: copy the invitation link from the list and send it yourself." — pass the link on by any convenient means.
 
 Invitation properties:
 
-- the link is single-use: the invitation is deleted once accepted;
+- the link is single-use: the invitation is deleted only once an account has been created from it. If that fails (password too short, address already taken, a database error), the link keeps working;
 - it does not expire: the link works until it is used or cancelled;
 - the account is created strictly for the address in the invitation, and the address is not verified — anyone holding the link can accept the invitation. Send the link over a trusted channel and cancel unused invitations.
 
@@ -46,12 +48,13 @@ You cannot invite yourself: your own address is rejected with "Invalid email add
 
 ### Accepting an invitation {#accept}
 
-The link opens the **Join the team** page with the text "You've been invited to view the server “…”. Set a password for …". The invitee enters a password (8 to 72 bytes, see [Accounts](#accounts)) and clicks **Accept invitation**. pgscope creates a team member account, grants access to the server, signs the user in and shows the server's page.
+The link opens the **Join the team** page with the text "You've been invited to view the server “…”. Set a password for …". The invitee enters a password (at least 8 characters and at most 72 bytes, see [Accounts](#accounts)) and clicks **Accept invitation**. pgscope creates a team member account, grants access to the server, signs the user in and shows the server's page.
 
 Possible errors:
 
 - "Invitation not found or already used" — the link has already been used, the invitation was cancelled or the server was deleted;
-- "An account with this email address already exists" — the person signed up on their own in the meantime. The invitation is used up in this case; invite them again — for an existing account access is granted immediately.
+- "The password must be at least 8 characters and at most 72 bytes (a Cyrillic character takes 2 bytes)" — the password does not fit the rule. The invitation is kept; choose another password;
+- "An account with this email address already exists. Sign in to it and ask the server owner to share the server with that account." (status 409) — the person already has an account with this address, for example they signed up on their own. The invitation is kept. Let the person sign in to their account and have the owner invite the same address again: for an existing account access is granted immediately, and the pending invitation is deleted.
 
 ### Revoking access and cancelling invitations {#revoke}
 
@@ -121,6 +124,7 @@ The Profile page opens from your email address at the bottom of the sidebar. Und
 | **API key** | regular accounts | shows the key, copies it, issues a new one |
 | **Sending reports** | regular accounts | ready-made commands for PostgreSQL, PgBouncer and Pgpool, and tips on `pg_stat_statements`, `auto_explain` and AWS RDS |
 | **Language** | everyone | the UI language |
+| **Time zone** | everyone | the time zone of dates and times in the UI |
 | **Change password** | everyone | changing the password |
 | **Danger zone** | everyone | deleting the account |
 
@@ -141,11 +145,19 @@ The **Русский** / **English** switch in the **Language** card changes the
 
 The UI language affects page texts, error messages and the language of the emails sent when inviting someone to a team. It does not affect the language of alert notifications: that is set per channel, see [Notification language](notifications.md#language).
 
+### Time zone {#time-zone}
+
+In the **Time zone** card ("Dates and times in the interface are shown in this time zone. It is saved to your profile.") choose the zone in which the UI shows dates and times: in tables, the report list, the alert history and on charts. The first option is **Same as the browser ({zone})** with the browser's zone in place of `{zone}`, for example **Same as the browser (Europe/Moscow)**; it is the default. Next come `UTC` and every zone the browser knows, with its current offset, for example `Asia/Tokyo (UTC+09:00)`.
+
+The choice applies at once and is saved to your profile, so signing in from another computer shows times in the same zone. With **Same as the browser** every browser shows times in its own zone. If this browser does not know the saved zone, times are shown in the browser's zone and the list shows **Same as the browser**. Before sign-in the browser's zone is used.
+
+The texts of alert notifications do not depend on this setting. Where times are always shown in UTC is listed in [Time zone](ui.md#time-zone).
+
 ### Changing the password {#password}
 
-In the **Change password** card enter the **Current password** and the **New password** (8 to 72 bytes, see [Accounts](#accounts)) and click **Change password**. On success the page shows "Password changed."; with a wrong current password it shows the error "The current password is incorrect".
+In the **Change password** card enter the **Current password** and the **New password** (at least 8 characters and at most 72 bytes, see [Accounts](#accounts)) and click **Change password**. On success the page shows "Password changed."; with a wrong current password it shows the error "The current password is incorrect".
 
-Changing the password does not end sessions already open on other devices: they last until their 30 days run out or until sign-out.
+After a password change all other sessions of the account are ended: other browsers and devices are sent back to the sign-in page. The session the password was changed from stays signed in.
 
 pgscope has no password reset by email. If a user forgets their password, an administrator can set a new one directly in the pgscope database (`PGSCOPE_DB`). Passwords are stored as bcrypt hashes; the `pgcrypto` extension can build a compatible hash:
 

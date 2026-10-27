@@ -18,11 +18,11 @@ A few things are not kept in the database:
 
 | Table | Contents |
 |---|---|
-| `users` | accounts: email, password hash (bcrypt), API key (empty for team members), chosen language |
+| `users` | accounts: email, password hash (bcrypt), API key (empty for team members), chosen language, UI time zone (`NULL` = the browser's zone) |
 | `sessions` | sign-in sessions: token, user, expiry |
 | `servers` | servers: owner, type (`postgres` or `pgpool`), name, time of the latest report, a short summary for the server list and the Inspector |
 | `shares` | who a server is shared with |
-| `invites` | pending invitations |
+| `invites` | pending invitations, at most one per address and server |
 | `reports` | full pgmetrics reports exactly as received, gzip-compressed. The `source` column is empty for the server's own reports and holds the PgBouncer name for pooler reports |
 | `metrics` | time series: one row per object per report, values in `jsonb` |
 | `alert_rules` | alert rules |
@@ -39,7 +39,7 @@ Most of the space is taken by `metrics` and `reports`. The object key in `metric
 | empty string | the whole server (for Pgpool, Pgpool itself) |
 | `db:<database>` | database |
 | `tbl:<database>.<schema>.<table>`, `idx:<database>.<schema>.<index>` | table, index |
-| `q:<database>:<queryid>` | query from `pg_stat_statements` |
+| `q:<database>:<queryid>` | query from `pg_stat_statements`; rows of the same query run by different users are summed. Rows from databases that have since been dropped come without a database name and share the key `q::<queryid>` |
 | `fn:<database>.<schema>.<function>` | user function |
 | `ts:<name>` | tablespace |
 | `repl:<standby>`, `slot:<slot>` | standby (in the primary's report), replication slot |
@@ -57,7 +57,7 @@ Most of the space is taken by `metrics` and `reports`. The object key in `metric
 | Server list and Inspector | `servers` | as long as the server exists |
 
 > [!NOTE]
-> The report list in the server top bar shows at most the 500 most recent reports from the last 30 days. With a report every 5 minutes that is about 41 hours. Older reports are kept until they expire, but you cannot pick them in the interface.
+> The report list in the server top bar shows at most the 2,000 most recent reports from the last 30 days. With a report every 5 minutes that is about 7 days. Older reports are kept until they expire, but you cannot pick them in the interface.
 
 ## Retention {#retention}
 
@@ -71,14 +71,14 @@ How the cleanup works:
 - The background cleanup runs right after pgscope starts and then again one hour after the previous pass finishes.
 - It deletes `metrics` and `events` rows older than `PGSCOPE_METRICS_RETENTION_DAYS` days and reports older than `PGSCOPE_REPORT_RETENTION_DAYS` days. Age is measured from the report time, that is, the collection time on the host where pgmetrics ran.
 - **The latest report of each source is never deleted**, even if it is older than the limit. A source is the server itself and each of its PgBouncers. A server whose collection has stopped therefore keeps showing its last state.
-- The same pass deletes expired sign-in sessions.
+- The same pass deletes expired sign-in sessions, whatever the retention values, `0` included.
 - Cleanup errors go to the pgscope log with the `retention:` prefix.
 - The variables are read at startup: restart pgscope after changing them.
 
 Not deleted automatically: the servers themselves (even if reports stopped long ago), agent records, pending invitations (they never expire) and the current alert state. How to remove them by hand is described in [Deleting data](#deleting).
 
-> [!WARNING]
-> Set retention to positive integers. `0` or a negative number does not disable the cleanup — it does the opposite: with `PGSCOPE_METRICS_RETENTION_DAYS=0` every pass deletes all time series and all history, and with `PGSCOPE_REPORT_RETENTION_DAYS=0` only the latest report of each source survives. A non-numeric value (for example `30d`) is ignored and the default applies.
+> [!NOTE]
+> `0` means keep forever: with `PGSCOPE_METRICS_RETENTION_DAYS=0` time series and history are not deleted, and with `PGSCOPE_REPORT_RETENTION_DAYS=0` full reports are not deleted. The storage database then grows without limit, see [Storage size](#sizing). A negative value stops pgscope at startup with the message `PGSCOPE_METRICS_RETENTION_DAYS=-1: set a number of days to keep the data, or 0 to keep it forever` (the same for `PGSCOPE_REPORT_RETENTION_DAYS`). A non-numeric value (for example `30d`) is ignored and the default applies.
 
 Choosing the periods:
 
@@ -91,7 +91,7 @@ After lowering a retention period, the next pass deletes a lot of rows. PostgreS
 
 ### What drives the size {#size-drivers}
 
-- **`metrics`**: rows per day = objects per report × reports per day. The objects of a PostgreSQL report are the server itself and every database, table, index, query from `pg_stat_statements` (pgmetrics takes 100 queries by default), user function (if `track_functions` is on), tablespace, standby and replication slot. In a PgBouncer report the objects are the pooler itself, its databases and pools; in a Pgpool report, Pgpool itself and its backends.
+- **`metrics`**: rows per day = objects per report × reports per day. The objects of a PostgreSQL report are the server itself and every database, table, index, query from `pg_stat_statements` (pgmetrics takes 100 rows by default; rows of one query run by different users make one object), user function (if `track_functions` is on), tablespace, standby and replication slot. In a PgBouncer report the objects are the pooler itself, its databases and pools; in a Pgpool report, Pgpool itself and its backends.
 - **`reports`**: average compressed report size × reports per day × `PGSCOPE_REPORT_RETENTION_DAYS`, plus the latest report of each source.
 - **`events`** is usually small: a row is added only when the set of triggered alerts changes or a change is detected.
 

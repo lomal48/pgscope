@@ -47,7 +47,7 @@ The **Test** button next to a channel immediately sends a test notification in t
 - for alert channels the body contains one test alert with severity `warn`, the text "Test alert", the value `1` and a link to the server's Alerts page;
 - for change alert channels it contains one change "Test change" with the value "test".
 
-On success the page shows "Test notification sent (…)" with the channel type. On failure it shows "Could not send the notification: …" with the reason, for example "SMTP is not configured (set PGSCOPE_SMTP_ADDR)", "The SMTP server did not accept the message", "https://… returned HTTP status 404" or "could not reach https://…". A test does not change the alert state and is not added to the history.
+On success the page shows "Test notification sent (…)" with the channel type. On failure it shows "Could not send the notification: …" with the reason, for example "SMTP is not configured (set PGSCOPE_SMTP_ADDR)", "No recipient address given", "The SMTP server did not accept the message", "https://… returned HTTP status 404" or "could not reach https://…". A test does not change the alert state and is not added to the history.
 
 > [!WARNING]
 > Testing a PagerDuty or VictorOps channel on the **Notifications** tab of the Alerts page sends a real event with warning severity: PagerDuty gets a `trigger` with the same `dedup_key` as the server's real alerts, VictorOps gets a `WARNING` with the same `entity_id`. If there are no real alerts, resolve the opened incident manually. Testing a PagerDuty channel on the Change alerts page opens a separate incident with severity `info` and no `dedup_key`, which also has to be resolved manually.
@@ -67,17 +67,17 @@ Slack, VictorOps and xMatters use the same notification subject and text as the 
 
 ### Email {#email}
 
-- **Destination**: one or more addresses separated by commas, for example `ops@example.com, dba@example.com`. Spaces are removed, and all recipients get one email (all are listed in the `To` header). Do not end the list with a comma: that adds an empty recipient, and if the SMTP server rejects it, the email goes to nobody.
+- **Destination**: one or more addresses separated by commas, for example `ops@example.com, dba@example.com`. Spaces around addresses are removed, empty entries (for example, after an extra comma) are skipped, and repeats of an address (ignoring case) are kept once. All recipients get one email (all are listed in the `To` header). If no address is left, sending fails with "No recipient address given".
 - **Sender**: `PGSCOPE_SMTP_FROM` (`pgscope@localhost` by default).
-- **Format**: plain text in UTF-8, MIME-encoded subject. pgscope writes only the `From`, `To`, `Subject`, `MIME-Version` and `Content-Type` headers; there are no `Date` and `Message-ID` headers. If your SMTP server does not add them, strict spam filters may reject such emails — check delivery with the **Test** button.
+- **Format**: plain text in UTF-8, MIME-encoded subject. pgscope writes the `From`, `To`, `Subject`, `Date`, `Message-ID`, `MIME-Version` and `Content-Type` headers. `Message-ID` looks like `<random-string@domain>`, where the domain comes from `PGSCOPE_SMTP_FROM` (`localhost` if the address has no domain).
 - **Requires**: `PGSCOPE_SMTP_ADDR` (`host:port`), plus `PGSCOPE_SMTP_USER` and `PGSCOPE_SMTP_PASS` if needed, see [Configuring pgscope](config.md#smtp).
 
 Sending details (the standard Go SMTP client):
 
 - if the server offers STARTTLS, the connection is encrypted and the server certificate is verified;
-- the user name and password (PLAIN mechanism) are sent only over an encrypted connection or to `localhost`, otherwise sending fails;
+- when `PGSCOPE_SMTP_USER` is set, the user name and password (PLAIN mechanism) are sent only over an encrypted connection or to `localhost`, otherwise sending fails; it also fails when the server does not advertise AUTH;
 - SMTPS with implicit TLS (usually port 465) is not supported — use a STARTTLS port (usually 587) or an internal relay on port 25;
-- there are no retries, and sending email has no timeout of its own: if the SMTP server does not respond, the wait is limited only by the operating system's network timeouts, and the **Test** button waits all that time;
+- there are no retries; one delivery (connecting plus the whole exchange with the SMTP server) gets 30 seconds. If the SMTP server has not finished by then, the delivery fails with "The SMTP server did not accept the message" (the cause is in the pgscope log, in the `smtp: …` line), and the **Test** button waits at most 30 seconds;
 - the proxy variables (`HTTPS_PROXY` and others) do not apply to SMTP: pgscope connects to `PGSCOPE_SMTP_ADDR` directly.
 
 An example of an alert email is on the [Alert rules](alerts.md#examples) page. A change email looks like this:
@@ -181,7 +181,7 @@ In the worst case delivery to one channel takes about 27 seconds (4 attempts of 
 
 Redirects (3xx) are followed by the standard Go rules: on 301, 302 and 303 the follow-up request is sent as a `GET` without a body, so configure the final URL. Because of retries on timeout, a receiver may get one notification twice if the first attempt was processed but the response was late: respond quickly and handle notifications idempotently.
 
-Email is sent in a single attempt, with no retries and no timeout of its own (see [Email](#email)).
+Email is sent in a single attempt, with no retries, within 30 seconds (see [Email](#email)).
 
 ## Webhook format {#webhook}
 
@@ -247,7 +247,7 @@ Sent on every change of the set of triggered alerts. The `alerts` field holds **
 | `alerts[].type` | string | `warn` (warning) or `crit` (critical) |
 | `alerts[].text` | string | the rule text |
 | `alerts[].value` | string | the current value with its unit, for humans; "never" for a table that has never been vacuumed |
-| `alerts[].objname` | string | the object name: server, database, `database.schema.table`, tablespace, standby or the first 20 bytes of the query text |
+| `alerts[].objname` | string | the object name: server, database, `database.schema.table`, tablespace, standby or the first 20 characters of the query text |
 | `alerts[].objlink` | string | link to the object in pgscope, built from `PGSCOPE_BASE_URL` |
 | `alerts[].query` | string | the query text from the report (pgmetrics truncates it to 500 characters by default); only for **Query** level rules |
 

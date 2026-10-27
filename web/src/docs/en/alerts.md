@@ -54,7 +54,7 @@ A table of the alerts triggered by the latest report:
 |---|---|
 | **Severity** | **Critical** or **Warning**; critical alerts come first by default |
 | **Rule** | the rule text, for example "Table size greater than 10 GiB" |
-| **Object** | the object name: server name, database, table as `database.schema.table`, tablespace, standby name or the first 20 bytes of the query text (20 characters for ASCII text) |
+| **Object** | the object name: server name, database, table as `database.schema.table`, tablespace, standby name or the first 20 characters of the query text |
 | **Value** | the current value with its unit |
 | **Query** | the full query text (only for **Query** level rules) |
 
@@ -74,7 +74,7 @@ The channels that receive notifications about these alerts: email, Slack, PagerD
 
 A timeline of changes of the set of triggered alerts, newest first. Each card is a moment when the set changed: the report time in the title, the caption "Alerts triggered: N" and the list of alerts (severity, rule, object, value), or, when no triggered alerts remain, the caption "All alerts cleared" and the mark **Alerts cleared**. Until the set has changed, the tab shows **No alert notifications yet**.
 
-The page shows the server's last 200 events (alerts and changes together). History is kept as long as time series — `PGSCOPE_METRICS_RETENTION_DAYS` days (90 by default), see [Data storage](data.md#retention).
+The page shows the server's last 200 events (alerts and changes together). History is kept as long as time series — `PGSCOPE_METRICS_RETENTION_DAYS` days (90 by default; `0` keeps it forever), see [Data storage](data.md#retention).
 
 ## Creating a rule {#create-rule}
 
@@ -128,12 +128,12 @@ The comparison is case-sensitive. What the text is compared with:
 | Database | the database name, for example `shop` |
 | Table | `database.schema.table`, for example `shop.public.orders` |
 | Tablespace | the tablespace name, for example `pg_default` |
-| Query | the first 20 bytes of the query text from `pg_stat_statements` (20 characters for ASCII text), for example `select * from orders` |
+| Query | the first 20 characters of the query text from `pg_stat_statements`, for example `select * from orders` |
 
 For the **Table** and **Query** levels the rule can also be limited to one database with **Only in database (optional)** — the database name must match exactly.
 
 > [!NOTE]
-> For queries the name filter only sees the beginning of the text (20 bytes). To single out the queries of one database, **Only in database (optional)** is more reliable.
+> For queries the name filter only sees the beginning of the text (20 characters). To single out the queries of one database, **Only in database (optional)** is more reliable.
 
 ## Changing and deleting rules {#delete-rule}
 
@@ -154,13 +154,13 @@ The object is the server itself (its name), except for the lag metrics on the pr
 
 | Metric | ID | Unit | What is measured |
 |---|---|---|---|
-| **XID range** | `xid_range` | count | `next_xid − oldest_xid` from `pg_control_checkpoint()` (as of the last checkpoint): how many transaction IDs separate the cluster's oldest unfrozen XID from the next one. The wraparound limit is about 2.1 billion (2³¹). For limitations see the notes below the table |
+| **XID range** | `xid_range` | count | `next_xid − oldest_xid` modulo 2³² from `pg_control_checkpoint()` (as of the last checkpoint): how many transaction IDs separate the cluster's oldest unfrozen XID from the next one. The wraparound limit is about 2.1 billion (2³¹). For limitations see the notes below the table |
 | **Time since last checkpoint** | `checkpoint_age` | time | report time minus the time of the last checkpoint |
 | **Number of inactive replication slots** | `inactive_slots` | count | slots in `pg_replication_slots` with `active = false`; such a slot keeps retaining WAL from its `restart_lsn` on (and `xmin`, if set) |
 | **Replication write lag on primary** | `repl_write_lag` | bytes | for each standby in `pg_stat_replication`: the current WAL position minus `write_lsn` |
 | **Replication flush lag on primary** | `repl_flush_lag` | bytes | the same for `flush_lsn` |
 | **Replication replay lag on primary** | `repl_replay_lag` | bytes | the same for `replay_lsn` |
-| **Replay lag on standby** (bytes) | `standby_lag_bytes` | bytes | on a standby only: `pg_last_wal_receive_lsn() − pg_last_wal_replay_lsn()` |
+| **Replay lag on standby** (bytes) | `standby_lag_bytes` | bytes | only on a standby whose receive LSN is known: `pg_last_wal_receive_lsn() − pg_last_wal_replay_lsn()` |
 | **Replay lag on standby** (time) | `standby_lag_secs` | time | on a standby only: report time minus `pg_last_xact_replay_timestamp()` |
 | **Number of WAL files** | `wal_files` | count | WAL segments in `pg_wal` |
 | **Number of WAL files ready for archiving** | `wal_ready` | count | `.ready` files in `pg_wal/archive_status` — segments not yet handed to `archive_command` |
@@ -171,11 +171,11 @@ The object is the server itself (its name), except for the lag metrics on the pr
 
 Notes:
 
-- The current WAL position for the lag metrics is `pg_current_wal_lsn()` on a primary; on a cascading standby that has its own standbys it is the replay position. The object name is the standby's `application_name`, or the client address if that is empty, otherwise the walsender PID. All `pg_stat_replication` rows count, including `pg_basebackup` processes. If a row has no such LSN (the field is `NULL`, for example for a `pg_basebackup` process or a standby that has just connected), pgscope treats it as zero, and the lag equals the whole current WAL position — a byte-based rule fires falsely until the LSN appears.
-- The **Replay lag on standby** metrics are computed on standbys only; on a primary there are no objects and the rule never triggers.
+- The current WAL position for the lag metrics is `pg_current_wal_lsn()` on a primary; on a cascading standby that has its own standbys it is the replay position. The object name is the standby's `application_name`, or the client address if that is empty, otherwise the walsender PID. All `pg_stat_replication` rows count, including `pg_basebackup` processes. If a row has no such LSN (the field is `NULL`, for example for a `pg_basebackup` process or a standby that has just connected), no lag is computed for it, and the rule skips that row.
+- The **Replay lag on standby** metrics are computed on standbys only; on a primary there are no objects and the rule never triggers. The byte variant also needs the receive LSN: a standby without a WAL receiver (for example, one that only restores WAL from the archive) has no value, and the rule is not evaluated.
 - `standby_lag_secs` also grows when the primary simply has no writes: there is nothing to replay, and the time of the last replayed transaction stands still. For lightly loaded clusters `standby_lag_bytes` is more reliable.
 - Checkpoints are skipped when no WAL has been written since the previous one, so on an idle server `checkpoint_age` also grows without a problem.
-- `xid_range` is computed as a plain difference of 32-bit transaction IDs, without the epoch. Once the cluster's transaction counter passes 2³² (about 4.3 billion transactions since `initdb`), `next_xid` starts again from small numbers, and until the oldest XID passes the same point the metric is negative — a "greater than" rule does not trigger during that time. On PostgreSQL older than 9.6 pgmetrics does not collect these fields and the value is 0. Make **XID age as a percentage of autovacuum_freeze_max_age** (**Database** level) your main wraparound rule and use **XID range** as an extra one.
+- `xid_range` is computed as the difference of 32-bit transaction IDs modulo 2³², as PostgreSQL does, so it stays correct after the cluster's transaction counter passes 2³² (about 4.3 billion transactions since `initdb`). On PostgreSQL older than 9.6 pgmetrics does not collect these fields; then there is no value and the rule is not evaluated. The metric describes the whole cluster and does not show which database is behind on freezing, so make **XID age as a percentage of autovacuum_freeze_max_age** (**Database** level) your main wraparound rule and use **XID range** as an extra one.
 
 ### Database {#metrics-database}
 
@@ -222,12 +222,12 @@ pgmetrics collects disk and inode data only when it runs on the database host un
 
 ### Query {#metrics-query}
 
-The object is each query from `pg_stat_statements` included in the report. pgmetrics sends only the first `--statements-limit` queries (100 by default) with the highest total execution time and truncates their text to `--sql-length` characters (500 by default); queries outside that list are invisible to rules. The object name is the first 20 bytes of the query text; the text from the report is in the **Query** column.
+The object is each query from `pg_stat_statements` included in the report, that is, a database and `queryid` pair. `pg_stat_statements` keeps a separate row for each user who ran the query; pgscope merges them and evaluates the rule once per query on the merged values. pgmetrics sends only the first `--statements-limit` queries (100 by default) with the highest total execution time and truncates their text to `--sql-length` characters (500 by default); queries outside that list are invisible to rules. The object name is the first 20 characters of the query text; the text from the report is in the **Query** column.
 
 | Metric | ID | Unit | What is measured |
 |---|---|---|---|
-| **Max query execution time** | `query_max_time` | time (ms) | `max_exec_time` (`max_time` before PostgreSQL 13) |
-| **Mean query execution time** | `query_mean_time` | time (ms) | `total_exec_time / calls` |
+| **Max query execution time** | `query_max_time` | time (ms) | `max_exec_time` (`max_time` before PostgreSQL 13), the largest over all users of the query |
+| **Mean query execution time** | `query_mean_time` | time (ms) | `total_exec_time / calls`, both summed over all users of the query |
 
 > [!WARNING]
 > `pg_stat_statements` values accumulate since the last statistics reset (`pg_stat_statements_reset()`). After a single slow execution, a **Max query execution time** alert stays triggered until the statistics are reset. For continuous control **Mean query execution time** is a better fit.
@@ -254,7 +254,7 @@ A starting point for a typical OLTP server. Tune the thresholds to your workload
 | Tablespace | **Free inodes** | less than 10% | **Warning** | inodes are running out |
 | Query | **Mean query execution time** | greater than 1 second | **Warning** | slow queries |
 
-On standbys, add **Replay lag on standby** (bytes) greater than 1 GiB. The **XID range** thresholds match those of [diagnostics](monitoring.md#diagnostics): it reports **High XID age** when a database's XID age (`age(datfrozenxid)`) exceeds 40% of 2³¹ and **Transaction ID wraparound risk** above 75%. **XID range** has a period when it is negative (see the [notes on server metrics](#metrics-server)), so a rule on **XID age as a percentage of autovacuum_freeze_max_age** is a must.
+On standbys, add **Replay lag on standby** (bytes) greater than 1 GiB. The **XID range** thresholds match those of [diagnostics](monitoring.md#diagnostics): it reports **High XID age** when a database's XID age (`age(datfrozenxid)`) exceeds 40% of 2³¹ and **Transaction ID wraparound risk** above 75%. A rule on **XID age as a percentage of autovacuum_freeze_max_age** is still a must: **XID range** describes the whole cluster, while that rule shows which database is behind on freezing (see the [notes on server metrics](#metrics-server)).
 
 > [!NOTE]
 > **Warning** and **Critical** rules for the same metric are independent: when the value is above both thresholds, both trigger, and the list shows two alerts for one object.

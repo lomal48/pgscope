@@ -1,6 +1,6 @@
 # Security
 
-This page describes how pgscope protects data and access to it: the threat model, accounts and passwords, sessions and the cookie, open sign-up, API keys, ingestion protections, the monitoring role, the agent and the Docker socket, secrets handling and the data that can leave your network. It ends with a checklist for a production installation.
+This page describes how pgscope protects data and access to it: the threat model, accounts and passwords, sessions and the cookie, sign-up, API keys, ingestion protections, the monitoring role, the agent and the Docker socket, secrets handling and the data that can leave your network. It ends with a checklist for a production installation.
 
 ## Threat model {#threat-model}
 
@@ -27,7 +27,6 @@ pgscope never connects to the monitored databases itself: collectors send the re
 - built-in TLS: HTTPS is provided by a reverse proxy (see [Reverse proxy and HTTPS](install.md#reverse-proxy));
 - single sign-on (SSO, LDAP) and two-factor authentication;
 - sign-in attempt limiting;
-- a setting that disables sign-up;
 - an administrator role: every account sees only its own servers and the servers shared with it, and instance-wide actions are done in the storage database;
 - an audit log of user actions;
 - password reset by email.
@@ -35,9 +34,9 @@ pgscope never connects to the monitored databases itself: collectors send the re
 ## Accounts and passwords {#accounts}
 
 - Passwords are hashed with bcrypt at the default cost of the `golang.org/x/crypto/bcrypt` library (10). Plain-text passwords are not stored.
-- Passwords are 8 to 72 bytes long (72 bytes is the bcrypt limit). For Latin text that is the same number of characters; a Cyrillic character takes 2 bytes.
+- A password must be at least 8 characters and at most 72 bytes long (72 bytes is the bcrypt limit). A Cyrillic character takes 2 bytes, so an all-Cyrillic password is at most 36 letters. The rule is the same for sign-up, accepting an invitation and changing the password.
 - Email addresses are lowercased. Email is not verified, and the format check is minimal: contains `@`, at most 254 characters, no spaces.
-- A failed sign-in gets the same answer for an unknown email and a wrong password: **Incorrect email address or password**. Sign-up, however, answers **An account with this email address already exists**, so it can be used to find out whether an address is registered. In addition, pgscope answers a sign-in with an unknown address noticeably faster, because no password hash is compared in that case.
+- A failed sign-in gets the same answer for an unknown email and a wrong password: **Incorrect email address or password**. The response time does not tell them apart either: for an unknown address the password is compared with a dummy hash of the same cost. Open sign-up, however, answers **An account with this email address already exists**, so it can be used to find out whether an address is registered. Closed sign-up answers 403 before looking at the address and reveals nothing.
 - There is no limit on sign-in attempts. Set one up on the reverse proxy, for example `limit_req` in nginx for `/api/login`.
 - There are two kinds of accounts: the owner (signs up on their own and gets an API key) and the team member (created from an invitation, no API key). See [Team, profile and account](teams.md).
 
@@ -58,7 +57,7 @@ The temporary password may stay in the psql history and in the storage database 
 - Signing in creates a session with a random 52-character token from a cryptographic generator. The token is stored in the `sessions` table as is.
 - A session lasts 30 days from sign-in. Activity does not extend it.
 - **Sign out** deletes the session on the server.
-- Changing the password or regenerating the API key does **not** end other sessions. You can end all sessions of a user only in the storage database:
+- Changing the password ends all other sessions of the user; the session the change was made from stays. Regenerating the API key does **not** end sessions. You can end all sessions of a user, the current one included, in the storage database:
 
 ```sql
 DELETE FROM sessions WHERE user_id = (SELECT id FROM users WHERE email = 'user@example.com');
@@ -77,13 +76,21 @@ Cookie attributes:
 
 Behind an HTTPS proxy, set `PGSCOPE_BASE_URL` with `https://` or pass `X-Forwarded-Proto`; otherwise the cookie lacks the `Secure` flag. Conversely, if the flag is set but pgscope is opened over `http://`, the browser does not store the cookie and sign-in fails. All combinations are covered in [Reverse proxy and HTTPS](install.md#reverse-proxy).
 
-**CSRF protection.** Requests to the part of the interface API that requires sign-in must carry `Content-Type: application/json` for any HTTP method other than GET, otherwise pgscope answers 415. A plain HTML form on another site cannot send such a request, and for `fetch` the browser needs CORS permission, which pgscope never grants. `SameSite=Lax` adds another layer: the browser does not send the cookie with POST requests from other sites. The methods available without signing in (`/api/signup`, `/api/login`, `/api/logout`, `/api/invite/…`) do not check the `Content-Type` header.
+**CSRF protection.** Every interface API request that changes state must carry `Content-Type: application/json`, otherwise pgscope answers 415 **The request body must be JSON**. This covers requests with any method other than GET to the part of the API that requires sign-in, and the requests available without signing in: `POST /api/signup`, `/api/login`, `/api/logout` and `/api/invite/…`. A plain HTML form on another site cannot send such a request, and for `fetch` the browser needs CORS permission, which pgscope never grants. So another site can neither quietly sign the user's browser in to an attacker's account nor end the user's session. `SameSite=Lax` adds another layer: the browser does not send the cookie with POST requests from other sites. The ingestion API (`/api/v1/…`) does not check the header: it authenticates with an API key, not a cookie.
 
-## Open sign-up {#signup}
+## Sign-up {#signup}
 
-Sign-up (`POST /api/signup`) is available without signing in and without restrictions, and no setting turns it off. Anyone who can open the web interface can create an account and get an API key.
+Sign-up (`POST /api/signup`) is available without signing in. Who can use it is set by `PGSCOPE_SIGNUP` (see [PGSCOPE_SIGNUP](config.md#pgscope-signup)):
 
-What such a user can do:
+| Value | Who can sign up |
+|---|---|
+| `first` (the default) | only the first user, while the database has no account. Concurrent attempts on an empty database queue up, and only one of them gets an account |
+| `open` | anyone who can open the web interface |
+| `closed` | nobody: accounts are created only from team invitations (`/api/invite/…`) |
+
+When sign-up is closed, the sign-in page has no **Sign up** link, the sign-up page shows **Sign-up of new accounts is disabled. Ask an administrator to invite you.** instead of the form, and `POST /api/signup` answers 403.
+
+With `first`, anyone who opens pgscope before the first sign-up can become the owner, so create your own account right after installation. With `open`, anyone with network access to pgscope gets an account with an API key and can:
 
 - see only their own servers: other people's data is not available to them;
 - send reports and thus consume space in the storage database;
@@ -93,16 +100,7 @@ What such a user can do:
 What to do:
 
 1. Make the web interface reachable only from the networks where pgscope users work: firewall, VPN, reverse proxy rules.
-2. Once the owner accounts exist, close sign-up on the reverse proxy. Team invitations keep working: they use a different path (`/api/invite/…`).
-
-```nginx
-# inside the server { … } block, next to location /
-location = /api/signup {
-    return 403;
-}
-```
-
-The **Sign up** form stays visible, but submitting it fails with **HTTP error 403**.
+2. Keep `PGSCOPE_SIGNUP=first` or set `closed`. If you had to turn on `open`, restore the previous value as soon as the accounts you need exist.
 
 3. Restrict outgoing connections from the pgscope host: allow only the SMTP server and the destinations that actually need webhooks.
 
@@ -120,16 +118,18 @@ The **Sign up** form stays visible, but submitting it fails with **HTTP error 40
 
 | Measure | How it works |
 |---|---|
-| Body size | a report is limited to 256 MiB on the wire and 2 GiB after gzip decompression; an agent heartbeat to 4 MiB; web interface requests to 1 MiB |
+| Body size | a report is limited to `PGSCOPE_MAX_REPORT_MB` (256 MiB by default) both on the wire and after gzip decompression, otherwise the answer is 413 (see [PGSCOPE_MAX_REPORT_MB](config.md#pgscope-max-report-mb)); an agent heartbeat to 4 MiB, otherwise the answer is 400; web interface requests to 1 MiB |
+| Key before the report | if `apikey` comes before `data` in the body (the pgdash CLI and pgscope-agent send it that way), the key is checked before the report is read: an invalid or unknown key gets 401 or 403 after at most 64 KiB has been read. At most 64 KiB of JSON is allowed before the `data` member, otherwise the answer is 400 |
 | Format checks | the key is exactly 22 Latin letters or digits; server, PgBouncer and Pgpool names use `A–Z a–z 0–9 _ . -`, 1 to 64 characters; `data` must be a pgmetrics report with the collection time set and, for PgBouncer and Pgpool, with their section |
 | Rate | a report of one source (a server or one of its PgBouncers) is accepted at most once per `PGSCOPE_MIN_REPORT_INTERVAL` seconds (60 by default), otherwise the answer is 429 |
-| Concurrency | while the previous report of the same source is being saved, a new one gets 409 |
+| Concurrency | while the previous report of the same source is being saved, a new one gets 409. At most 4 reports in total are read and stored at once; the others wait until a slot frees up or the client disconnects |
+| Connection timeouts | request headers must arrive within 10 seconds and the whole request with its body within 10 minutes; an idle connection is closed after 2 minutes. A client cannot hold connections open indefinitely |
 | Errors | database error details go to the pgscope log; the client only gets a generic message |
 
 Limitations worth knowing:
 
 - Rate tracking lives in process memory: it resets on restart and does not count failed requests. There is no global request rate limit.
-- The request body is read and parsed **before** the API key is checked. The limits are sized for large reports, so even a client without a key can make pgscope parse up to 2 GiB of data and use a lot of memory.
+- A client that puts `data` before `apikey` or sends an empty key is authenticated only after its report has been read, and holds one of the 4 slots all that time. By sending bodies slowly (up to 10 minutes each), even a client without a key can take all the slots and delay ingestion for everyone. Memory stays bounded by `PGSCOPE_MAX_REPORT_MB`. The pgdash CLI and pgscope-agent always send the key first.
 
 So on the reverse proxy, open `/api/v1/` only to the networks where collectors run, and cap the body size at what your reports need (the average report size is shown by a query in [Checking the actual size](data.md#size-check)):
 
@@ -189,13 +189,13 @@ pgscope is designed for air-gapped networks: the web interface loads no external
 Watch the collector side too:
 
 - Without `--base-url`, the pgdash CLI sends the report to the pgDash cloud. Always specify your pgscope address; in an air-gapped network such a request simply fails.
-- pgmetrics with `--aws-rds-dbid` calls the AWS CloudWatch API, and with `--az-resource` Azure Monitor. These calls come from the collection host, not from pgscope.
+- pgmetrics with `--aws-rds-dbid` calls AWS APIs (CloudWatch for metrics, RDS for the log), and with `--az-resource` Azure Monitor. These calls come from the collection host, not from pgscope.
 
 ## Checklist {#checklist}
 
 1. pgscope listens only on the loopback interface (`PGSCOPE_LISTEN=127.0.0.1:8080` or `PGSCOPE_PORT=127.0.0.1:8080`), and users and collectors reach it through a reverse proxy with HTTPS.
 2. `PGSCOPE_BASE_URL` starts with `https://`, and the session cookie gets the `Secure` flag.
-3. The web interface is reachable only from the networks that need it; once accounts are created, sign-up is closed on the proxy (`location = /api/signup`).
+3. The web interface is reachable only from the networks that need it; `PGSCOPE_SIGNUP` is `first` (the default) or `closed`, and the first account was created right after installation.
 4. `/api/v1/` is reachable only from collector networks, and `client_max_body_size` matches the size of your reports.
 5. Sign-in attempts (`/api/login`) are rate-limited on the proxy.
 6. The monitoring role has only `pg_monitor`; its password is kept in `~/.pgpass` with `0600` permissions or in a Docker secret.
@@ -204,4 +204,4 @@ Watch the collector side too:
 9. The pgscope host is allowed only the outgoing connections it needs: SMTP and internal webhook receivers. If data must not leave the network, `PGSCOPE_AI_KEY` is empty and Slack, PagerDuty, VictorOps and xMatters channels are not used.
 10. Owners regularly review the **Team sharing** list and pending invitations and revoke access that is no longer needed. There is no audit log, so these reviews are the only control.
 11. The agent runs through docker-socket-proxy with `POST=0` when automatic network joining is not needed.
-12. If an API key may have leaked, regenerate it at once; if a session may have been stolen, delete the user's sessions in the storage database (see [Sessions and the cookie](#sessions)).
+12. If an API key may have leaked, regenerate it at once; if a session may have been stolen, the user changes their password, which ends all their other sessions (or delete the user's sessions in the storage database, see [Sessions and the cookie](#sessions)).

@@ -24,6 +24,7 @@ type user struct {
 	Email  string
 	APIKey *string // nil for team-member accounts
 	Lang   *string // saved UI language, nil = not chosen yet
+	TZ     *string // saved time zone of the web UI, nil = the browser's
 }
 
 type server struct {
@@ -70,8 +71,8 @@ func currentUser(r *http.Request) *user {
 		return nil
 	}
 	var u user
-	err = db.QueryRow(r.Context(), `select u.id, u.email, u.apikey, u.lang from sessions s join users u on u.id = s.user_id
-		where s.token = $1 and s.expires > now()`, c.Value).Scan(&u.ID, &u.Email, &u.APIKey, &u.Lang)
+	err = db.QueryRow(r.Context(), `select u.id, u.email, u.apikey, u.lang, u.tz from sessions s join users u on u.id = s.user_id
+		where s.token = $1 and s.expires > now()`, c.Value).Scan(&u.ID, &u.Email, &u.APIKey, &u.Lang, &u.TZ)
 	if err != nil {
 		return nil
 	}
@@ -282,7 +283,7 @@ func logout(w http.ResponseWriter, r *http.Request) {
 
 func me(w http.ResponseWriter, r *http.Request, u *user) {
 	writeJSON(w, map[string]any{"id": u.ID, "email": u.Email, "apikey": u.APIKey, "team_member": u.APIKey == nil,
-		"base_url": cfg.BaseURL, "ai": cfg.AIKey != "", "smtp": cfg.SMTPAddr != "", "lang": u.Lang,
+		"base_url": cfg.BaseURL, "ai": cfg.AIKey != "", "smtp": cfg.SMTPAddr != "", "lang": u.Lang, "tz": u.TZ,
 		"min_report_interval": int(cfg.MinInterval / time.Second)})
 }
 
@@ -296,6 +297,31 @@ func setLang(w http.ResponseWriter, r *http.Request, u *user) {
 		return
 	}
 	if _, err := db.Exec(r.Context(), `update users set lang = $2 where id = $1`, u.ID, req.Lang); err != nil {
+		internalErr(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+// setTZ saves the time zone of the user's web UI; "" goes back to the browser's.
+func setTZ(w http.ResponseWriter, r *http.Request, u *user) {
+	var req struct {
+		TZ string `json:"tz"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		httpErr(w, 400, "Некорректный запрос")
+		return
+	}
+	var tz *string
+	if req.TZ != "" {
+		// "Local" would be the pgscope host's zone, not a name the browser knows
+		if _, err := time.LoadLocation(req.TZ); err != nil || req.TZ == "Local" {
+			httpErr(w, 400, "Неизвестный часовой пояс")
+			return
+		}
+		tz = &req.TZ
+	}
+	if _, err := db.Exec(r.Context(), `update users set tz = $2 where id = $1`, u.ID, tz); err != nil {
 		internalErr(w, err)
 		return
 	}

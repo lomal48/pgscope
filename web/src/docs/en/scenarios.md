@@ -6,6 +6,8 @@ Step-by-step recipes for common tasks: connect a server, investigate a slow quer
 
 You need a running pgscope, an owner account and a collection host that can reach both PostgreSQL and pgscope. The best collection host is the database host itself: only then does pgmetrics collect system metrics and read the PostgreSQL log. If the databases run in Docker, use the agent instead (see [Add many Docker databases](#docker-fleet)).
 
+The first account is created with the **Sign up** link on the sign-in page. By default (`PGSCOPE_SIGNUP=first`) sign-up closes after that: colleagues are added by invitation (see [Give a colleague access](#share-access)), and if you need more owners with their own servers and API keys, set `PGSCOPE_SIGNUP=open` for a while.
+
 1. **Monitoring role.** On the primary, as a superuser:
 
 ```sql
@@ -60,7 +62,7 @@ Do not send reports for one server more often than `PGSCOPE_MIN_REPORT_INTERVAL`
 ## Investigate a slow query {#slow-query}
 
 1. **When it started.** On **Overview**, pick a chart range (**1h** … **30d**) and find the moment when transactions, the number of backends or the cache hit ratio changed.
-2. **If the problem was in the past**, pick a report from that time in the report list in the top bar (**Latest report** is selected there by default): **Queries**, **Backends**, **Locks** and **Diagnostics** then show the state at that moment. The list holds at most the 500 most recent reports from the last 30 days.
+2. **If the problem was in the past**, pick a report from that time in the report list in the top bar (**Latest report** is selected there by default): **Queries**, **Backends**, **Locks** and **Diagnostics** then show the state at that moment. The list holds the reports from the last 30 days, but at most the 2000 most recent: at one report every 5 minutes that is about 7 days.
 3. **Which queries are the heaviest.** On **Queries**, sort by **Total time**: the bar shows each query's share of the total time. The most expensive queries are not necessarily the slowest: a frequent fast query can take more time than a rare slow one.
 4. **Query page.** Click a query to open it. The **Suggestions** block has automatic hints: low cache hit ratio, temp files, too many rows per call, high time variance. On the charts, compare mean time and the number of calls per interval: did the query get slower, or is it called more often?
 5. **Plan.** The **Execution plans** section shows `auto_explain` plans with warnings under the nodes (row estimate mismatch, Seq Scan discarding rows, sort spilling to disk). If there are no plans, see [No execution plans](troubleshooting.md#no-plans).
@@ -98,19 +100,21 @@ VACUUM (VERBOSE, ANALYZE) public.orders;
 1. **Alerts.**
    - On the primary: level **Server**, metric **Replication replay lag on primary (bytes)**, greater than 1 GiB. The alert fires separately for each standby.
    - On the standby itself, if it also sends reports as a separate server: **Replay lag on standby (bytes)**. The **(time)** variant is measured from the time of the last replayed transaction, so on a mostly idle primary it grows even without real lag.
-2. **Diagnostics** reports **Standbys are lagging** (over 1 GiB or 60 seconds), **Standby is not keeping up with WAL replay** and **WAL replay is paused**.
+2. **Diagnostics** reports **Standbys are lagging** (over 1 GiB or 60 seconds), **Standby is not keeping up with WAL replay** and **WAL replay is paused**. When the byte lag is unknown, **Standbys are lagging** fires on the time lag only, and the item reads `— behind`.
 3. **Where the delay is.** On the primary's **Replication** page, compare the write, flush and replay lag:
    - the write lag is already large — WAL is not reaching the standby: network or WAL sending;
    - write is fine but flush lags — slow disk on the standby;
    - only replay lags — the standby cannot apply WAL fast enough: load on its disk and CPU, conflicts with queries on the standby, or paused replay.
+
+   For WAL senders without known positions (`pg_basebackup`, `pg_receivewal`, a standby that is still starting) the byte lag is not computed: a `—` is shown instead, and byte-lag alerts do not fire for them. Likewise, a standby without a running WAL receiver has no **Replay lag on standby (bytes)** value and no **Standby is not keeping up with WAL replay** item.
 4. **On the standby**, check whether replay is paused and the WAL receiver state. To resume replay:
 
 ```sql
 SELECT pg_wal_replay_resume();
 ```
 
-5. **The whole fleet at once** — **Inspector** → **Replication**: number of standbys, maximum lag and inactive slots for every server.
-6. **Inactive slots.** The slot of a disconnected standby retains WAL, and the primary's disk fills up. If the standby is no longer needed, drop the slot and cap WAL retention with `max_slot_wal_keep_size`:
+5. **The whole fleet at once** — **Inspector** → **Replication**: number of standbys, maximum lag and inactive slots for every server. If a server has standbys but none of their lags is known, the **Max lag** column shows `—`.
+6. **Inactive slots.** The slot of a disconnected standby retains WAL, and the primary's disk fills up. A slot that has no `restart_lsn` yet (created but never used) retains no WAL, and diagnostics list it as `name (type)` without an amount. If the standby is no longer needed, drop the slot and cap WAL retention with `max_slot_wal_keep_size`:
 
 ```sql
 SELECT pg_drop_replication_slot('old_standby_slot');
@@ -158,7 +162,7 @@ WHERE state = 'idle in transaction'
 
 ## Clean up indexes safely {#index-cleanup}
 
-1. **Candidates.** **Index management** → **Unused**. In the **Not scanned** field, pick a period: **since stats reset** or **in the last 30 days** / **in the last 90 days**. The scan count is compared with the first report of the period, so you need that much history (see [Retention](data.md#retention)). With less history, the comparison uses the earliest stored time series; their date is shown next to the field (**compared with the report from …**). Unique indexes are not listed.
+1. **Candidates.** **Index management** → **Unused**. In the **Not scanned** field, pick a period: **since stats reset** or **in the last 30 days** / **in the last 90 days**. The scan count is compared with the first report of the period, so you need that much history (see [Retention](data.md#retention)). With less history, the comparison uses the earliest stored time series; their date is shown next to the field (**compared with the report from …**). Unique indexes are not listed. The index of an exclusion constraint (`EXCLUDE`, named `*_excl` by default) is not unique and may appear in the list, but `DROP INDEX` on it fails: such an index is dropped only together with its constraint.
 2. **Check each candidate:**
    - usage statistics are per server: if some queries go to standbys, check the same index on the standby's page in pgscope;
    - for rare jobs (monthly reports, period closing) use the 90-day period;
@@ -172,7 +176,7 @@ WHERE indexrelid = 'public.orders_created_at_idx'::regclass;
 ```
 
 4. **Dropping.** Tick the indexes — SQL with `DROP INDEX CONCURRENTLY` appears below, grouped by database (with a `\c database` line for psql). Run it in psql outside a transaction (`CONCURRENTLY` does not work inside one), one index at a time, at a quiet time, and watch query times afterwards.
-5. **Duplicates.** On the **Duplicates** tab, pgscope groups indexes with the same definition, keeps the first index of each group and proposes dropping the rest. The `UNIQUE` attribute is ignored in this comparison. Before dropping, make sure you are not dropping a unique index that enforces uniqueness of the data.
+5. **Duplicates.** On the **Duplicates** tab, pgscope groups indexes with the same definition (the `UNIQUE` attribute is ignored in this comparison). In each group it keeps the primary key index, or else a unique index, then a constraint's index, and proposes dropping the rest. A unique index is not proposed while the group has a non-unique duplicate, and the indexes of primary keys and constraints (`*_pkey`, `*_key`, `*_excl`) are never proposed. **Diagnostics** makes the same choice in the **Duplicate indexes** item, with lines such as `t_id_idx duplicates t_pkey`. pgmetrics does not report which index backs a constraint, so pgscope recognises such indexes only by the names PostgreSQL gives them by default: for a constraint with another name, check the index yourself. A pair of a unique index and a `*_key` constraint index on the same columns may not be flagged at all; check such pairs by hand too.
 6. **Bloated indexes** — the **Bloated** tab, SQL `REINDEX INDEX CONCURRENTLY`. The rebuild needs free space roughly the size of the index.
 7. **Rollback** — `CREATE INDEX CONCURRENTLY` from the saved definition.
 
@@ -182,14 +186,14 @@ More: [Index management](objects.md#index-management).
 
 Slack, PagerDuty, VictorOps and xMatters are cloud services and need internet access (the PagerDuty address is fixed in pgscope: `https://events.pagerduty.com/v2/enqueue`). In an air-gapped network, use email through an internal SMTP server or a webhook to an internal address.
 
-1. **SMTP.** Set `PGSCOPE_SMTP_ADDR` (for example `mail.example.local:25`) and `PGSCOPE_SMTP_FROM` to an address your mail server accepts, then restart pgscope (see [Email (SMTP)](config.md#smtp)).
-2. **Channels.** On each server: **Alerts** → **Notifications** → **Channel** **Email** (several addresses separated by commas) or **Webhook** with the address of an internal receiver, then **Add** and **Test**. Webhook format: [Webhook format](notifications.md#webhook).
+1. **SMTP.** Set `PGSCOPE_SMTP_ADDR` (for example `mail.example.local:25`) and `PGSCOPE_SMTP_FROM` to an address your mail server accepts, then restart pgscope (see [Email (SMTP)](config.md#smtp)). pgscope emails carry the `Date` and `Message-ID` headers that strict mail servers require.
+2. **Channels.** On each server: **Alerts** → **Notifications** → **Channel** **Email** (several addresses separated by commas; spaces and empty list entries are ignored, and a repeated address gets one email) or **Webhook** with the address of an internal receiver, then **Add** and **Test**. Webhook format: [Webhook format](notifications.md#webhook).
 3. **Rules.** Start with the starter set from [Monitor a new server in 10 minutes](#new-server).
 4. **Change alerts** are configured separately, with their own channels (see [Change alerts](change-alerts.md)).
 5. **How delivery works** — keep this in mind when choosing a receiver:
    - a notification is sent only when the set of triggered alerts changes: a new alert fires or a previous one clears. While the set stays the same there are no repeats, and a change in the value of an already triggered alert does not cause a notification. Adding or deleting a rule re-checks the latest report right away and can also send a notification;
    - when everything is back to normal, a notification says that all alerts have cleared;
-   - if delivery fails, the notification is not retried later. HTTP channels (webhook, Slack, PagerDuty, VictorOps, xMatters) retry the request up to three times with a 5-second pause only if the receiver did not answer within 3 seconds; a non-2xx answer is not retried. Errors are written to the pgscope log as `notify …` lines.
+   - if delivery fails, the notification is not retried later. An email the SMTP server has not accepted within 30 seconds counts as not delivered. HTTP channels (webhook, Slack, PagerDuty, VictorOps, xMatters) retry the request up to three times with a 5-second pause only if the receiver did not answer within 3 seconds; a non-2xx answer is not retried. Errors are written to the pgscope log as `notify …` lines.
 6. **Watching for incoming reports.** pgscope checks rules only when a report arrives, so if collection stops, no alerts fire. Check report freshness with an external job against the storage database. A read-only role:
 
 ```sql
@@ -255,6 +259,8 @@ Access is granted to a specific server, and only its owner can grant it.
 2. Enter the address in **Invite by email** and click **Invite**.
    - If the colleague already has an account in this pgscope, access appears right away (with SMTP configured, both they and you get an email).
    - Otherwise an invitation is created. The link is emailed if SMTP is configured, and a copy is shown in the list next to the address (copy button) so you can pass it on yourself. Following the link, the colleague sets a password and gets a team member account. The link is built from `PGSCOPE_BASE_URL`, so that must be set correctly.
+   - Inviting the same address again does not create a second invitation: pgscope refreshes the first one and sends the same link. An invitation stays valid until an account is created with it, so an error while accepting it (for example, a password that is too short) does not use it up.
+   - The colleague usually cannot sign up on their own: with `PGSCOPE_SIGNUP=first` (the default) and `closed`, new accounts come only from invitations. An invitation can be accepted in any mode.
 3. What a member can do: view all data of the server, use diagnostics and the AI chat, change alert rules, notification channels and change alert settings. What they cannot do: invite others, revoke access, delete the server, have an API key or send reports. There is no read-only mode: a member can, for example, add a notification channel with their own address.
 4. Access is granted to one server. For several servers, invite on each one; if the colleague already has an account, access to further servers appears right away.
 5. **Revoke access** — the trash icon next to the member (**Revoke access**) or next to the invitation (**Cancel invitation**). The member's account remains, but without shared servers it sees nothing; the member can delete it (**Profile** → **Delete account**), or an administrator can in the storage database.

@@ -18,6 +18,7 @@ export type ServerRow = {
 }
 
 export type Me = { id: number; email: string; apikey: string | null; team_member: boolean; base_url: string; ai: boolean; smtp: boolean; lang: 'ru' | 'en' | null
+  tz: string | null // IANA time zone of the UI, null = the browser's
   min_report_interval?: number // seconds between reports of one server (PGSCOPE_MIN_REPORT_INTERVAL)
 }
 

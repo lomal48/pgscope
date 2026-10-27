@@ -102,6 +102,7 @@ func init() {
 		"Некорректное правило":                            "Invalid rule",
 		"Некорректный канал уведомлений":                  "Invalid notification channel",
 		"Неподдерживаемый язык":                           "Unsupported language",
+		"Неизвестный часовой пояс":                        "Unknown time zone",
 		"Адрес должен быть URL со схемой http или https":  "The address must be an http or https URL",
 		"Канал уведомлений не найден":                     "Notification channel not found",
 		"[pgscope] тестовое уведомление для сервера «%s»": "[pgscope] test notification for server “%s”",

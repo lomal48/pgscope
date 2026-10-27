@@ -45,7 +45,7 @@ The contents of a report are defined by pgmetrics. Among other things it include
 - databases, tablespaces, tables, indexes, sequences, functions, extensions, roles, triggers;
 - query statistics from `pg_stat_statements` (if the extension is installed);
 - vacuum processes in progress;
-- host system metrics (Linux only) and data from the PostgreSQL log (`auto_explain` plans, autovacuum history) — only when pgmetrics runs on the database host: it reads the log from the local disk, and its path can be given with the `--log-file` or `--log-dir` flags (for AWS RDS and Aurora the log comes from CloudWatch);
+- host system metrics (Linux only) and data from the PostgreSQL log (`auto_explain` plans, autovacuum history, deadlocks) — only when pgmetrics runs on the database host and connects to it locally (through the Unix socket or `127.0.0.1`). The `--log-file` and `--log-dir` flags only give the log path and do not help over a remote connection. The log must be in `stderr` format with a timestamp in `log_line_prefix`, or in `csvlog` format; PostgreSQL 13+ `csvlog` is read only by the pgmetrics that pgscope builds ([pgmetrics built by pgscope](collect.md#pgmetrics-build)), official releases skip it. For AWS RDS and Aurora the log comes through the RDS API with the `--aws-rds-dbid` flag (see [PostgreSQL log](postgres.md#logs));
 - AWS CloudWatch and Azure Monitor metrics — when pgmetrics runs with the corresponding flags;
 - PgBouncer and Pgpool-II statistics — in separate reports.
 
@@ -115,7 +115,7 @@ pgscope is a standalone product with the same feature set as pgDash, but it is n
 - Alert rules are evaluated only when a new report arrives. If collection stops, you get no alert about it. Watch the report freshness indicator in the UI: it turns yellow when the latest report is older than 15 minutes.
 - pgscope does not do TLS itself: HTTPS is provided by a reverse proxy (see [Reverse proxy and HTTPS](install.md#reverse-proxy)).
 - It is designed as one instance per storage database: the report rate limit is kept in process memory.
-- Sign-up is open to anyone who can open the web UI. Every new user gets their own API key and sees only their own servers and the servers shared with them. Sign-up cannot be turned off by a setting, so restrict network access to pgscope.
+- Self-registration is controlled by `PGSCOPE_SIGNUP`: by default (`first`) only the first user can sign up, and others get access through team invitations; `open` lets anyone who can open the web UI sign up, and `closed` turns sign-up off entirely (see [PGSCOPE_SIGNUP](config.md#pgscope-signup)). Every user sees only their own servers and the servers shared with them.
 - There is no LDAP or SSO sign-in. The only roles are server owner and team member.
 - The Slack, PagerDuty, VictorOps and xMatters channels and AI chat need internet access.
 

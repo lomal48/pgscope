@@ -64,12 +64,12 @@ For permanent operation, run pgscope as a systemd service behind an HTTPS proxy:
 
 1. Open the pgscope address in a browser, for example `http://monitor.example.com:8080`.
 2. On the sign-in page click **Sign up**.
-3. Enter an email and a password and click **Create account**. The password must be 8 to 72 bytes in UTF-8: a Latin letter takes one byte, a Cyrillic one takes two.
+3. Enter an email and a password and click **Create account**. The password must be at least 8 characters and at most 72 bytes in UTF-8: a Latin letter takes one byte, a Cyrillic one takes two.
 
 You are signed in right away. The session lasts 30 days.
 
 > [!WARNING]
-> Anyone who can open the pgscope web UI can sign up. A new user does not see other users' servers, but restrict network access to pgscope if it is reachable by more than your team.
+> By default (`PGSCOPE_SIGNUP=first`) only the first user can sign up: they become the owner, and the **Sign up** link disappears afterwards. Sign up right after starting pgscope, before others learn its address. Give colleagues access with invitations (see [Inviting by email](teams.md#invite)); the other modes are described in [PGSCOPE_SIGNUP](config.md#pgscope-signup).
 
 ## Step 3. Copy the API key {#api-key}
 
@@ -97,7 +97,7 @@ The **Queries** page needs the `pg_stat_statements` extension; execution plans n
 
 ## Step 5. Send the first report {#first-report}
 
-Install pgmetrics and the pgdash CLI (prebuilt releases are on the project pages; for isolated networks see [Installing in an isolated network](install.md#air-gapped)). Then run, with your own values:
+Install pgmetrics and the pgdash CLI (prebuilt releases are on the project pages, pgmetrics with pgscope's fixes is described in [pgmetrics built by pgscope](collect.md#pgmetrics-build); for isolated networks see [Installing in an isolated network](install.md#air-gapped)). Then run, with your own values:
 
 ```bash
 pgmetrics --no-password -f json -h dbhost -U pgmon db1 db2 \
@@ -140,9 +140,11 @@ pgscope accepts reports of one server at most once every 60 seconds (`PGSCOPE_MI
 | Symptom | What to check |
 |---|---|
 | The pgscope page does not open | `docker compose ps` and `docker compose logs pgscope` (or the output of `./pgscope`); a `schema setup: …` error means pgscope could not connect to the storage database or create its tables there |
+| There is no **Sign up** link on the sign-in page | the database already has an account (by default only the first user can sign up) or `PGSCOPE_SIGNUP=closed` is set. Ask the owner to invite you, or see [PGSCOPE_SIGNUP](config.md#pgscope-signup) |
 | After signing in, the sign-in page is shown again | `PGSCOPE_BASE_URL` starts with `https://` but you opened pgscope over `http://`: the browser does not store the secure cookie. Open pgscope over HTTPS or fix the address (see [Session cookie and the Secure flag](install.md#secure-cookie)) |
 | The server did not appear after sending | the pgscope status code ([Server responses](collect.md#responses)), the address ending in `/api/v1`, the key from the profile of this same pgscope |
 | Status 429 | reports of one server arrive more often than once every 60 seconds |
+| Status 413 | the report is larger than the `PGSCOPE_MAX_REPORT_MB` limit (256 MiB by default) or the body size limit of the reverse proxy, see [PGSCOPE_MAX_REPORT_MB](config.md#pgscope-max-report-mb) |
 | The **Queries** page is empty | `pg_stat_statements` is not installed or not readable, see [Preparing PostgreSQL](postgres.md) |
 
 Other cases are in [Troubleshooting and FAQ](troubleshooting.md).

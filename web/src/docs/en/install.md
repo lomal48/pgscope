@@ -13,7 +13,7 @@ This page covers everything a production pgscope installation needs: requirement
 | Docker (optional) | Docker Engine with the Docker Compose v2 plugin (`docker compose`) |
 | Network | inbound HTTP(S) to pgscope from browsers, hosts with the pgdash CLI and agents; outbound to the storage database; optionally to the SMTP server and webhook URLs |
 
-The load on pgscope and the size of the storage database depend on the number of servers, the number of objects in them (tables, indexes, queries) and the report interval. While ingesting, pgscope holds the whole report in memory, so reports from servers with tens of thousands of tables need noticeably more memory. How to estimate and reduce the data volume is described in [Data storage](data.md).
+The load on pgscope and the size of the storage database depend on the number of servers, the number of objects in them (tables, indexes, queries) and the report interval. While ingesting, pgscope holds the whole report in memory and needs 5–7 times its size to store it; at most 4 reports are stored at once. So reports from servers with tens of thousands of tables need noticeably more memory, and the largest report size is capped by [PGSCOPE_MAX_REPORT_MB](config.md#pgscope-max-report-mb) (256 MiB by default, about 6 GiB of memory in the worst case). How to estimate and reduce the data volume is described in [Data storage](data.md).
 
 ## Building from source {#build}
 
@@ -49,7 +49,7 @@ docker build -f Dockerfile.agent --build-arg VERSION=2026.10.26 -t pgscope-agent
 | Image | Contents |
 |---|---|
 | `pgscope` (`Dockerfile`) | a statically linked `pgscope` on `alpine:3.22` with root certificates. Runs as the unprivileged `pgscope` user (uid 10001), listens on port 8080. Configured with environment variables only |
-| `pgscope-agent` (`Dockerfile.agent`) | `pgscope-agent` and pgmetrics built from source at exactly the version pgscope uses (taken from `go.mod`). Runs as root because it talks to `/var/run/docker.sock`. The `VERSION` build argument is the agent version shown on the **Agents** page |
+| `pgscope-agent` (`Dockerfile.agent`) | `pgscope-agent` and pgmetrics built from source at exactly the version pgscope uses (taken from `go.mod`), with pgscope's fixes, including reading PostgreSQL 13+ `csvlog` (the `tools/build-pgmetrics.sh` script, see [pgmetrics built by pgscope](collect.md#pgmetrics-build)). Runs as root because it talks to `/var/run/docker.sock`. The `VERSION` build argument is the agent version shown on the **Agents** page |
 
 Tag images with a version, not only `latest`: then upgrading and rolling back is just a tag change. In `deploy/docker-compose.yml` the tag is set with `PGSCOPE_IMAGE`, in the agent compose files with `PGSCOPE_AGENT_IMAGE`.
 
@@ -110,13 +110,13 @@ The connection string is a URL or a libpq-style `key=value` string. The password
 There is no separate migration tool and no version table. The schema is one script of idempotent statements (`IF NOT EXISTS`) that runs on every start:
 
 - on an empty database it creates all tables and indexes;
-- after a pgscope upgrade it adds new tables, columns and indexes; existing data is not touched;
+- after a pgscope upgrade it adds new tables, columns and indexes; existing data is not touched, with one exception: of several pending invitations of one address to one server only the newest is kept (the unique index `invites_email` requires it);
 - on an error pgscope logs `schema setup: …` and exits.
 
 | Table | Contents |
 |---|---|
-| `users`, `sessions` | accounts (bcrypt password hashes, API keys, language) and browser sessions |
-| `servers`, `shares`, `invites` | servers, team sharing, unused invitations |
+| `users`, `sessions` | accounts (bcrypt password hashes, API keys, language, time zone) and browser sessions |
+| `servers`, `shares`, `invites` | servers, team sharing, unused invitations (at most one per address and server) |
 | `reports` | full pgmetrics reports, compressed |
 | `metrics` | time series: one row per object (server, database, table, index, query, etc.) per report |
 | `alert_rules`, `change_rules`, `notifiers` | alert rules, change alert settings, notification channels |
@@ -187,8 +187,8 @@ journalctl -u pgscope -f
 pgscope serves plain HTTP only and has no built-in TLS. Passwords, session cookies and API keys (they are in the body of every report) travel over the network, so a production installation puts a reverse proxy with HTTPS in front of pgscope: nginx, Caddy, HAProxy or a load balancer. Proxy requirements:
 
 1. **A dedicated host name at the root path.** The web UI loads `/assets/…` and calls `/api/…` with absolute paths, so serving pgscope under a subdirectory (`https://example.com/pgscope/`) is not supported.
-2. **Request body size.** pgscope accepts reports of up to 256 MiB (up to 2 GiB after gzip decompression); it rejects a larger report with status 400. nginx limits bodies to 1 MiB by default, and large reports get a 413 error from the proxy. Set `client_max_body_size 256m`.
-3. **Timeouts.** Storing a large report and an AI chat answer can take more than a minute. Increase the response read timeout (`proxy_read_timeout` in nginx).
+2. **Request body size.** pgscope accepts reports of up to `PGSCOPE_MAX_REPORT_MB` (256 MiB by default), both compressed and after gzip decompression; it rejects a larger report with status 413 (see [PGSCOPE_MAX_REPORT_MB](config.md#pgscope-max-report-mb)). nginx limits bodies to 1 MiB by default, so large reports get a 413 from the proxy already. Set `client_max_body_size` no lower than `PGSCOPE_MAX_REPORT_MB`, for example `256m`.
+3. **Timeouts.** Storing a large report and an AI chat answer can take more than a minute. Increase the response read timeout (`proxy_read_timeout` in nginx). pgscope's own timeouts are fixed: the whole request with the report must arrive within 10 minutes, and a response may take up to 35 minutes (an AI chat answer may need about that long in the worst case).
 4. **The `X-Forwarded-Proto: https` header**, so the session cookie gets the Secure flag (see [below](#secure-cookie)).
 5. **`PGSCOPE_BASE_URL` with `https://`** — the public address users see. Links in alerts and invitations and the ready-made commands in the UI are built from it.
 6. **pgscope listens on the loopback interface only**: `PGSCOPE_LISTEN=127.0.0.1:8080` for the binary or `PGSCOPE_PORT=127.0.0.1:8080` for Docker Compose.
@@ -203,7 +203,7 @@ server {
     ssl_certificate     /etc/nginx/tls/pgscope.example.com.crt;
     ssl_certificate_key /etc/nginx/tls/pgscope.example.com.key;
 
-    # pgmetrics reports can be large; pgscope accepts up to 256 MiB
+    # pgmetrics reports can be large; by default pgscope accepts up to 256 MiB (PGSCOPE_MAX_REPORT_MB)
     client_max_body_size 256m;
 
     location / {
@@ -230,7 +230,7 @@ Once the proxy is configured:
 - if the certificate is issued by an internal certificate authority, clients must trust it: add the root certificate to the system trust store on hosts with the pgdash CLI, and pass it to the agent through `SSL_CERT_FILE` (see [Docker and Docker Swarm](docker.md)).
 
 > [!TIP]
-> Sign-up in pgscope is open to anyone who can open the web UI, and no setting turns it off. Once the owner accounts exist, you can close sign-up at the proxy, for example `location = /api/signup { return 403; }`. Team invitations keep working: they create accounts through a different endpoint (`/api/invite/…`).
+> Who can sign up is set by `PGSCOPE_SIGNUP`. By default (`first`) sign-up closes by itself as soon as the first account exists, so there is no need to block `/api/signup` on the proxy. Team invitations work with every value (see [PGSCOPE_SIGNUP](config.md#pgscope-signup)).
 
 ### Session cookie and the Secure flag {#secure-cookie}
 
@@ -253,7 +253,7 @@ pgscope accepts the `X-Forwarded-Proto` header from any client. This is safe: th
 
 ## Installing in an isolated network {#air-gapped}
 
-pgscope runs without internet access. Internet is needed only to build it: for npm packages, Go modules (including the pgmetrics sources for the agent image) and the Docker base images (`node:22-alpine`, `golang:1.27-alpine`, `alpine:3.22`, plus `postgres:17-alpine` for the compose file). Build on a machine with internet access and move the result as files.
+pgscope runs without internet access. Internet is needed only to build it: for npm packages, Go modules (including the pgmetrics sources and its modules for the agent image and `tools/build-pgmetrics.sh`), the `patch` package for the agent image and the Docker base images (`node:22-alpine`, `golang:1.27-alpine`, `alpine:3.22`, plus `postgres:17-alpine` for the compose file). Build on a machine with internet access and move the result as files.
 
 **Docker images:**
 
@@ -284,7 +284,7 @@ docker cp agent-tmp:/usr/local/bin/pgmetrics ./pgmetrics
 docker rm agent-tmp
 ```
 
-Both files are statically linked (`CGO_ENABLED=0`) and run on any Linux with the same architecture as the build machine. For another architecture build the images with `docker buildx build --platform …` or the binary with the matching `GOARCH`.
+Both files are statically linked (`CGO_ENABLED=0`) and run on any Linux with the same architecture as the build machine. For another architecture build the images with `docker buildx build --platform …` or the binary with the matching `GOARCH`. pgmetrics builds without Docker with `tools/build-pgmetrics.sh`, for another architecture too: `GOOS=linux GOARCH=arm64 tools/build-pgmetrics.sh`, see [pgmetrics built by pgscope](collect.md#pgmetrics-build).
 
 **The pgdash CLI** is not part of the images: download a prebuilt release from the project page on the machine with internet access and move it along with the other files.
 
@@ -310,7 +310,14 @@ What happens during an upgrade:
 - the report rate limits are kept in memory and reset on restart;
 - user sessions are stored in the database, so nobody has to sign in again.
 
-**Rolling back.** Schema changes only add objects, so an older version usually starts on an upgraded database. However, rollback has not been tested, and the reliable path is to restore the previous image or binary together with the backup taken before the upgrade.
+**Behaviour changes to check when upgrading to this version:**
+
+- self-registration is closed by default once the database has accounts (`PGSCOPE_SIGNUP=first`). If users must keep signing up on their own, set `PGSCOPE_SIGNUP=open`;
+- `0` in `PGSCOPE_METRICS_RETENTION_DAYS` and `PGSCOPE_REPORT_RETENTION_DAYS` now means keep forever, and a negative value keeps pgscope from starting;
+- a report larger than `PGSCOPE_MAX_REPORT_MB` (256 MiB by default, both compressed and decompressed) is rejected with status 413; before, up to 2 GiB was allowed after decompression;
+- `PGSCOPE_AI_PROVIDER` is no longer read, so you can remove it from the settings.
+
+**Rolling back.** Schema changes add objects, so an older version usually starts on an upgraded database. One known exception: the unique index `invites_email` keeps an older version from inviting again an address that already has a pending invitation. Rollback has not been tested, and the reliable path is to restore the previous image or binary together with the backup taken before the upgrade.
 
 **Upgrading PostgreSQL inside Docker Compose.** A data directory cannot be opened by a different PostgreSQL major version: if you simply change the `postgres:17-alpine` tag to the next version, the database will not start. Move the data with `pg_dump` and a restore into a new volume, or with `pg_upgrade`.
 

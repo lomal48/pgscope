@@ -26,16 +26,35 @@ Worth knowing up front:
 
 Both tools are open-source (Apache 2.0) programs by RapidLoop: [pgmetrics](https://pgmetrics.io) and [pgdash CLI](https://github.com/rapidloop/pgdash). They are static binaries without dependencies. Install them on the host the collection runs from: the database server or a separate collector host.
 
-For a closed network, download the release archives on a machine with internet access and transfer the files. You can also build them from Go sources, also on a machine with internet access (`go install` downloads modules) and on Linux of the same architecture as the collection hosts. pgmetrics is best taken at the same version pgscope is built with, so that the report model matches exactly. In the pgscope source directory:
+For a closed network, download the pgdash CLI release archive on a machine with internet access and transfer the file. You can also build it from Go sources, also on a machine with internet access (`go install` downloads modules) and on Linux of the same architecture as the collection hosts:
 
 ```bash
-export CGO_ENABLED=0   # a static binary that does not depend on libc
-v=$(go list -m -f '{{.Version}}' github.com/rapidloop/pgmetrics)
-GOBIN=$PWD/bin go install "github.com/rapidloop/pgmetrics/cmd/pgmetrics@$v"
-GOBIN=$PWD/bin go install github.com/rapidloop/pgdash@latest
+CGO_ENABLED=0 GOBIN=$PWD/bin go install github.com/rapidloop/pgdash@latest   # a static binary that does not depend on libc
 ```
 
-Another way is to take pgmetrics from the agent image if it is already inside the perimeter. The binary is static and runs on any Linux of the same architecture:
+> [!NOTE]
+> The pgdash CLI decodes the report with the pgmetrics model of its own version and encodes it again. Fields that this model version does not know are lost on the way. Use recent and matching versions of pgmetrics and the pgdash CLI. pgscope-agent and sending with curl ([Sending without the pgdash CLI](#curl)) pass the JSON on without re-encoding.
+
+pgmetrics is best taken as built by pgscope, see [the next section](#pgmetrics-build). Official pgmetrics releases (release archives on GitHub, packages) work too, with two limits: they do not read the `csvlog` format of PostgreSQL 13 and newer (with them, write the log in `stderr` format), and they read log entry times correctly only when `log_timezone` matches the time zone of their host or is `'UTC'`. Details are in [PostgreSQL log](postgres.md#logs).
+
+### pgmetrics built by pgscope {#pgmetrics-build}
+
+pgscope's build is pgmetrics at exactly the version pgscope is built with (taken from `go.mod`, so the report model matches exactly), with the fixes from the `third_party/pgmetrics/` directory of the pgscope sources:
+
+- `0001-csvlog-pg13.patch` reads `csvlog` of every PostgreSQL version. Official pgmetrics parses only the 23-column `csvlog` of PostgreSQL 12 and silently skips the files of PostgreSQL 13 and newer (24 and 26 columns), so plans, autovacuum history, deadlocks and log entries never reach the report.
+- `0002-log-timezone.patch` reads log entry times (the `%m` and `%t` timestamps and `csvlog`) in the time zone named by the server's `log_timezone`. Official pgmetrics understands only the zone abbreviations of its own host and UTC, so with a different `log_timezone` entry times are shifted by the zone offset, see [PostgreSQL log](postgres.md#logs).
+
+The `tools/build-pgmetrics.sh` script builds it: it downloads the pgmetrics sources, applies the fixes, runs their tests (`go test ./collector`) and builds a static binary (`CGO_ENABLED=0`) with the `timetzdata` tag: the time zone database is embedded in the binary, so times are read in `log_timezone` even on hosts and in containers without one (`/usr/share/zoneinfo`). The agent image builds pgmetrics with the same script. It needs Go, the `patch` utility and access to the Go module proxy: pgmetrics has its own `go.mod`, whose modules (the AWS and Azure SDKs and others) are not among pgscope's modules, so `go mod download` in the pgscope directory does not fetch them. Without network access the build only works with a pre-filled Go module cache. In the pgscope source directory:
+
+```bash
+tools/build-pgmetrics.sh                                           # ./pgmetrics for this machine
+GOOS=linux GOARCH=amd64 tools/build-pgmetrics.sh pgmetrics-amd64   # for an x86-64 database host
+GOOS=linux GOARCH=arm64 tools/build-pgmetrics.sh pgmetrics-arm64   # for an ARM database host
+```
+
+The tests run for the build machine, so they pass in a cross-build too. If a fix does not apply (for example, after pgmetrics is bumped in `go.mod`) or the tests fail, the script exits with an error and creates no file. Copy the resulting file to the database host, for example to `/usr/local/bin/pgmetrics`.
+
+If the agent image is already inside the perimeter, you can take pgmetrics from it. The binary is static and runs on any Linux of the same architecture as the image:
 
 ```bash
 docker create --name pgm pgscope-agent:latest
@@ -43,8 +62,7 @@ docker cp pgm:/usr/local/bin/pgmetrics ./pgmetrics
 docker rm pgm
 ```
 
-> [!NOTE]
-> The pgdash CLI decodes the report with the pgmetrics model of its own version and encodes it again. Fields that this model version does not know are lost on the way. Use recent and matching versions of pgmetrics and the pgdash CLI. pgscope-agent and sending with curl ([Sending without the pgdash CLI](#curl)) pass the JSON on without re-encoding.
+The version of pgscope's build ends with `+pgscope`: `pgmetrics -V` prints it (for example `pgmetrics v1.19.2-0.20260909042907-19fcebfc27eb+pgscope`), and the **Collected by** row of the **Cluster** card on **Overview** shows it for reports collected by this binary. A version without `+pgscope` is an official release.
 
 ## First report {#first-report}
 
@@ -257,7 +275,7 @@ pgmetrics reads the PostgreSQL log (the **Logs** page, `auto_explain` plans, **A
 
 System metrics (the **System** page, load and memory on **Overview**, disk usage of tablespaces) are also collected only over a local connection and only on Linux.
 
-Set `--log-span` equal to the sending interval (5 minutes when running every 5 minutes). All requirements for log settings and file permissions are in [PostgreSQL log](postgres.md#logs).
+Set `--log-span` equal to the sending interval (5 minutes when running every 5 minutes). A PostgreSQL 13+ `csvlog` log is read only by [pgmetrics built by pgscope](#pgmetrics-build). All requirements for log settings and file permissions are in [PostgreSQL log](postgres.md#logs).
 
 ## AWS RDS and Aurora {#aws}
 
@@ -341,14 +359,18 @@ Pgpool-II appears in the **Servers** list as a separate object with its own dash
 
 ## Rate and size limits {#limits}
 
-**Rate.** A report is accepted if at least `PGSCOPE_MIN_REPORT_INTERVAL` seconds (60 by default) have passed since the last *successfully stored* report of the same source. A source is the account, the type (PostgreSQL or Pgpool-II), the server name and the PgBouncer name. Otherwise pgscope answers 429. The timestamps are kept in process memory and reset when pgscope restarts. A value of `0` turns the check off. While the previous report of the same source is still being stored, the next one gets 409. The variable is described in [Configuring pgscope](config.md).
+**Rate.** A report is accepted if at least `PGSCOPE_MIN_REPORT_INTERVAL` seconds (60 by default) have passed since the last *successfully stored* report of the same source. A source is the account, the type (PostgreSQL or Pgpool-II), the server name and the PgBouncer name. Otherwise pgscope answers 429. The timestamps are kept in process memory and reset when pgscope restarts. A value of `0` turns the check off. While the previous report of the same source is still being stored, the next one gets 409. The value in effect is shown in **Profile** → **Sending reports**; the variable is described in [Configuring pgscope](config.md).
 
-**Size.** The request body is limited to 256 MiB as sent and 2 GiB after gzip decompression (4 MiB for agent heartbeats). pgscope rejects a larger body with 400 **Invalid request body**. Reports are usually far smaller. If a report is huge (tens of thousands of tables), shrink it with `-c`, `-C`, `-a`, `-A`, `--omit`, `-S`, `--statements-limit`.
+**Size.** The request body is limited to `PGSCOPE_MAX_REPORT_MB` mebibytes (256 by default), and the limit applies twice: to the body as sent and to the same body after gzip decompression. pgscope rejects a larger report with 413 **The report is larger than 256 MiB, the limit set by PGSCOPE_MAX_REPORT_MB on the pgscope server**. Reports are usually far smaller: pgmetrics writes about 0.4–1 KiB per table or index, so 256 MiB fits about 250 thousand objects. If a report is huge, shrink it with `-c`, `-C`, `-a`, `-A`, `--omit`, `-S`, `--statements-limit`, or raise `PGSCOPE_MAX_REPORT_MB`. Agent heartbeats have their own limit of 4 MiB.
+
+**Memory.** pgscope reads and stores at most 4 reports at once; further reports wait for their turn. Storing a report takes 5–7 times its size in memory, so with the default limit pgscope needs about 6 GiB of memory in the worst case. On a host with little memory, lower `PGSCOPE_MAX_REPORT_MB` to a size that fits your reports with a margin.
+
+**Key before the report.** The pgdash CLI and pgscope-agent put `apikey` before `data` in the body, so pgscope rejects a request with a bad key (401 or 403) before it reads the report. At most 64 KiB of JSON is allowed before the `data` field.
 
 > [!WARNING]
-> A reverse proxy in front of pgscope may limit the body size more strictly. nginx defaults to `client_max_body_size 1m`, and large reports get 413 from the proxy, not from pgscope. Raise the limit for `/api/v1/`, see [Reverse proxy](install.md#reverse-proxy).
+> A reverse proxy in front of pgscope may limit the body size more strictly. nginx defaults to `client_max_body_size 1m`, and large reports get 413 from the proxy (an HTML page, not pgscope's JSON). Raise the limit for `/api/v1/` to at least `PGSCOPE_MAX_REPORT_MB`, see [Reverse proxy](install.md#reverse-proxy).
 
-Large reports over a slow link may not fit into the pgdash CLI `--timeout` (60 seconds): raise it.
+**Time.** The whole request, body included, must reach pgscope within 10 minutes, otherwise pgscope closes the connection: for a 256 MiB report that is about 0.5 MB/s. Large reports over a slow link may also not fit into the pgdash CLI `--timeout` (60 seconds): raise it.
 
 ## Server responses {#responses}
 
@@ -357,7 +379,7 @@ The report endpoints accept only `POST`. The body is JSON, optionally gzip-compr
 | Code | pgscope message (English) | Cause | What to do |
 |---|---|---|---|
 | 200 | — | the report was accepted and stored | — |
-| 400 | **Invalid request body** | the body is not JSON, is truncated or exceeds the limit | make sure the output of `pgmetrics -f json` is sent; shrink the report, see [Limits](#limits) |
+| 400 | **Invalid request body** | the body is not JSON, is truncated or has more than 64 KiB before the `data` field | make sure the output of `pgmetrics -f json` is sent |
 | 400 | **Could not decompress the request body (gzip)** | `Content-Encoding: gzip` is set, but the body is not gzip | drop the header or compress the body |
 | 400 | **Invalid server name** | the server (or PgBouncer, Pgpool) name breaks the rule | see [Server name](#server-name) |
 | 400 | **The data is not a pgmetrics JSON report** | the `data` field is not a pgmetrics report or lacks the collection time | run pgmetrics with `-f json` |
@@ -366,7 +388,8 @@ The report endpoints accept only `POST`. The body is JSON, optionally gzip-compr
 | 403 | **Unknown API key** | no such key: it was regenerated, belongs to another pgscope instance or was copied wrongly | copy the current key from **Profile** |
 | 404 | — | wrong path or method, for example `--base-url` without `/api/v1` | check `--base-url` |
 | 409 | **The previous report for this server is still being saved** | two reports of the same source arrived at the same time | the next scheduled report goes through; check for two jobs with the same name |
-| 413 | — | a reverse proxy response: the body exceeds its limit | raise `client_max_body_size` or its equivalent |
+| 413 | **The report is larger than N MiB, the limit set by PGSCOPE_MAX_REPORT_MB on the pgscope server** | the report exceeds the pgscope limit as sent or after decompression | shrink the report or raise `PGSCOPE_MAX_REPORT_MB`, see [Limits](#limits) |
+| 413 | — (an HTML page) | a reverse proxy response: the body exceeds its limit | raise `client_max_body_size` or its equivalent |
 | 429 | **Reports are being sent too often** | less than `PGSCOPE_MIN_REPORT_INTERVAL` has passed since the last stored report of this source | send less often; check for two jobs with the same name |
 | 500 | **Could not save the report** | a write error in the pgscope database | see the pgscope log (the `store report …` line) |
 | 502, 504 | — | a reverse proxy response: pgscope is down or did not answer in time | check that pgscope is running, and the proxy timeouts |
@@ -399,7 +422,7 @@ pgmetrics --no-password -f json -h DBHOST -U pgmon --all-dbs \
       --data-binary @- https://pgscope.example.com/api/v1/report
 ```
 
-This needs jq 1.7+ and curl 7.76+ (`--fail-with-body`). jq 1.6 also knows `--rawfile`, but it rounds 64-bit numbers, including the `queryid` statement identifiers. The key is read from a file and does not show up in the process list. For other report types the endpoint and the JSON fields change:
+This needs jq 1.7+ and curl 7.76+ (`--fail-with-body`). jq 1.6 also knows `--rawfile`, but it rounds 64-bit numbers, including the `queryid` statement identifiers. The key is read from a file and does not show up in the process list. jq writes the fields in the order they are listed, so `apikey` comes before `data` and pgscope rejects a bad key before reading the report; keep this order if you build the body another way. For other report types the endpoint and the JSON fields change:
 
 | Endpoint | Fields |
 |---|---|

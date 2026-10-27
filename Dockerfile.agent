@@ -8,9 +8,11 @@ ENV CGO_ENABLED=0
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
-# pgmetrics at exactly the version pgscope's go.mod requires, so the report model matches.
-RUN v=$(go list -m -f '{{.Version}}' github.com/rapidloop/pgmetrics) \
- && GOBIN=/out go install -trimpath -ldflags="-s -w -X main.version=$v" "github.com/rapidloop/pgmetrics/cmd/pgmetrics@$v"
+# pgmetrics at exactly the version pgscope's go.mod requires (so the report model matches),
+# with the fixes from third_party/pgmetrics applied
+COPY tools/build-pgmetrics.sh tools/
+COPY third_party/pgmetrics third_party/pgmetrics
+RUN apk add --no-cache patch && tools/build-pgmetrics.sh /out/pgmetrics
 COPY . .
 ARG VERSION=dev
 RUN go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o /out/pgscope-agent ./cmd/pgscope-agent

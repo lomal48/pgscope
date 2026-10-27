@@ -1,13 +1,34 @@
-import { useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { KeyRound, RefreshCw, Trash2 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useApp } from '../lib/server'
-import { Badge, Card, Code, CopyButton, ErrorBox, Field, PageHeader } from '../components/ui'
+import { Badge, Card, Code, CopyButton, ErrorBox, Field, PageHeader, Select } from '../components/ui'
 import { LangSwitch } from '../components/Layout'
 import { t, tk } from '../lib/i18n'
-import { fmtDur } from '../lib/format'
+import { BROWSER_TZ, fmtDur, knownTZ, setTZ } from '../lib/format'
 import { rich, setupCommands } from './Home'
 import { NewPassword, pwHint } from './Auth'
+
+// "UTC+03:00": the zone's offset now
+const utcOffset = (zone: string) =>
+  new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'longOffset' }).formatToParts()
+    .find(p => p.type === 'timeZoneName')!.value.replace(/^GMT$/, 'GMT+00:00').replace('GMT', 'UTC')
+
+// TZSelect applies the chosen zone at once and saves it to the profile; '' = the browser's zone
+function TZSelect({ onError }: { onError: (e: unknown) => void }) {
+  const { me, reloadMe } = useApp()
+  // a saved zone this browser cannot show is not applied (setTZ), so it shows as the browser's
+  const [cur, setCur] = useState(me.tz && knownTZ(me.tz) ? me.tz : '')
+  // built once; browsers do not list UTC, and cur adds a saved zone this browser names differently
+  const zones = useMemo(() => [...new Set(['UTC', ...Intl.supportedValuesOf('timeZone'), cur].filter(Boolean))]
+    .map(z => [z, `${z} (${utcOffset(z)})`] as [string, string]), [])
+  const pick = (z: string) => {
+    setCur(z)
+    setTZ(z)
+    api('/me/tz', 'PUT', { tz: z }).then(reloadMe, onError)
+  }
+  return <Select className="w-full sm:w-96" value={cur} onChange={pick} options={[['', t('Как в браузере ({zone})', { zone: BROWSER_TZ })], ...zones]} />
+}
 
 export function Profile() {
   const { me, reloadMe } = useApp()
@@ -65,10 +86,11 @@ export function Profile() {
   | pgdash -a ${me.apikey} --base-url=${base}/api/v1 report-pgpool PGPOOL-NAME`}</Code>
               <div className="font-medium">{t('Планы запросов и AWS RDS / Aurora')}</div>
               <p className="text-muted">
-                {rich(t('Включите {pgss} для статистики запросов и {autoexplain} (формат JSON) для планов выполнения. Планы, взаимоблокировки и автоочистку pgmetrics берёт из журнала, который читает, только если запущен на хосте базы данных с локальным подключением; {logfile} лишь указывает путь к файлу, а журнал нужен в формате stderr (csvlog PostgreSQL 13+ pgmetrics пропускает). Для RDS и Aurora добавьте {rds}, чтобы собирать метрики CloudWatch и журнал через API RDS.'), {
+                {rich(t('Включите {pgss} для статистики запросов и {autoexplain} (формат JSON) для планов выполнения. Планы, взаимоблокировки и автоочистку pgmetrics берёт из журнала, который читает, только если запущен на хосте базы данных с локальным подключением; {logfile} лишь указывает путь к файлу. Журнал подходит в формате stderr или csvlog, но csvlog PostgreSQL 13+ читает только pgmetrics, собранный pgscope ({build} или из образа агента): официальные выпуски pgmetrics такие файлы пропускают. Для RDS и Aurora добавьте {rds}, чтобы собирать метрики CloudWatch и журнал через API RDS.'), {
                   pgss: <code className="mono">pg_stat_statements</code>,
                   autoexplain: <code className="mono">auto_explain</code>,
                   logfile: <code className="mono">--log-file</code>,
+                  build: <code className="mono">tools/build-pgmetrics.sh</code>,
                   rds: <code className="mono">--aws-rds-dbid=ID</code>,
                 })}
               </p>
@@ -77,6 +99,9 @@ export function Profile() {
         )}
         <Card title={t('Язык')} sub={t('Язык сохраняется в вашем профиле.')}>
           <LangSwitch persist />
+        </Card>
+        <Card title={t('Часовой пояс')} sub={t('Даты и время в интерфейсе показываются в этом часовом поясе. Он сохраняется в вашем профиле.')}>
+          <TZSelect onError={setErr} />
         </Card>
         <Card title={t('Смена пароля')}>
           <form onSubmit={changePw} className="grid sm:grid-cols-3 gap-3 items-end">

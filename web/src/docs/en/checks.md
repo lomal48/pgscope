@@ -8,7 +8,7 @@ This reference lists every automatic check in pgscope: the report checks whose r
 - The thresholds are built into pgscope and cannot be configured. The checks do not send notifications: to get alerts with your own thresholds, create [alert rules](alerts.md).
 - The check results are also passed to the [AI chat](monitoring.md#ai-chat) context, if the chat is enabled.
 - Severity: **Critical** needs urgent action, **Warning** is a problem worth fixing, **Info** is a suggestion. The top of the **Diagnostics** page shows the **Critical**, **Warnings** and **Suggestions** counters; issues are sorted from critical to suggestions.
-- Each issue has a title, a category, an explanation, a list of affected objects (expanded with **Show details**; already expanded for critical issues) and a **View** button that opens the related server page. The list holds at most 50 objects; the rest are summarized as "… and N more". For the **Notification queue is filling up** and **Unsupported PostgreSQL version** checks, the **View** button currently leads to **Page not found** — open **Overview** from the server menu instead.
+- Each issue has a title, a category, an explanation, a list of affected objects (expanded with **Show details**; already expanded for critical issues) and a **View** button that opens the related server page. The list holds at most 50 objects; the rest are summarized as "… and N more".
 - Many checks use cumulative PostgreSQL counters (cache hits, rollbacks, temp files, deadlocks, scans, checkpoints). They cover the whole time since the last statistics reset, not the last few minutes: a problem fixed a week ago may keep firing until the counters are reset (`pg_stat_reset()`).
 
 The page itself is described in [Diagnostics](monitoring.md#diagnostics).
@@ -33,14 +33,14 @@ What to do: find what holds back freezing (long transactions, prepared transacti
 
 | Check | Severity | When it fires | pgscope text | Where to look |
 |---|---|---|---|---|
-| **Inactive replication slots** | Warning | a slot has `active = false`. List entries: "slot (type), retaining N of WAL" | "Inactive slots prevent removal of WAL files and old row versions, which can fill up the disk. Drop the slots you no longer need." | **Replication** |
-| **Standbys are lagging** | Warning | on the primary: the standby's `replay_lsn` is more than 1 GiB behind the current position, or `replay_lag` is above 60 s | "These standbys are more than 1 GiB or 60 seconds behind." | **Replication** |
-| **Standby is not keeping up with WAL replay** | Warning | on a standby: the last transaction was replayed more than 300 s ago (relative to the report time), and the receive LSN differs from the replay LSN | "The last transaction was replayed … ago, and the received WAL has not been fully replayed yet." | **Replication** |
+| **Inactive replication slots** | Warning | a slot has `active = false`. List entries: "slot (type), retaining N of WAL"; just "slot (type)" if the slot has no `restart_lsn` | "Inactive slots prevent removal of WAL files and old row versions, which can fill up the disk. Drop the slots you no longer need." | **Replication** |
+| **Standbys are lagging** | Warning | on the primary: the standby's known `replay_lsn` is more than 1 GiB behind the current position, or `replay_lag` is above 60 s. List entries: "standby: N behind, replay lag M s"; "— behind" if the position is unknown | "These standbys are more than 1 GiB or 60 seconds behind." | **Replication** |
+| **Standby is not keeping up with WAL replay** | Warning | on a standby: the last transaction was replayed more than 300 s ago (relative to the report time), and the receive LSN is known and ahead of the replay LSN | "The last transaction was replayed … ago, and the received WAL has not been fully replayed yet." | **Replication** |
 | **WAL replay is paused** | Warning | on a standby `pg_is_wal_replay_paused()` returns true | "Run pg_wal_replay_resume() to resume WAL replay." | **Replication** |
 | **Logical replication subscription errors** | Warning | a subscription has `apply_error_count` or `sync_error_count` above 0; one issue per subscription | "Subscription “…” in database “…” has N apply and M sync errors." | **Replication** |
 
 > [!NOTE]
-> The "retaining N of WAL" amount and the byte lag are computed from the slot's `restart_lsn` and the standby's `replay_lsn`. If the position is missing (a slot for which WAL has not been reserved yet or has been lost; walsender connections that do not report a replay position, such as `pg_basebackup` and `pg_receivewal`), the current pgscope version treats it as zero: the slot list shows an obviously inflated amount, and such a connection ends up in **Standbys are lagging**. Cross-check these cases on the [**Replication**](server.md#replication) page, where a missing position is shown as "—".
+> The "retaining N of WAL" amount and the byte lag are computed from the slot's `restart_lsn` and the standby's `replay_lsn`. If the position is missing (a slot for which WAL has not been reserved yet or has been lost; walsender connections that do not report a replay position, such as `pg_basebackup` and `pg_receivewal`), no amount is shown, and such a connection appears in **Standbys are lagging** only by `replay_lag`. The [**Replication**](server.md#replication) page shows an unknown position as "—".
 
 What to do: drop slots you do not need (`SELECT pg_drop_replication_slot('name');`) and set `max_slot_wal_keep_size`; for a lagging standby check the network, the disk and replay conflicts; look for subscription errors in the subscriber's log. Details are in [Replication](server.md#replication).
 
@@ -57,7 +57,7 @@ What to do: if archiving fails, run `archive_command` by hand and check space an
 
 ### Backends {#diag-backends}
 
-These checks count client backends (`backend_type = 'client backend'`) from `pg_stat_activity` at report time, including pgmetrics' own connection. Object list entries: "PID N (role@database): query" — the query text is cut to 80 characters.
+These checks count client backends (`backend_type = 'client backend'`) from `pg_stat_activity` at report time, including pgmetrics' own connection. Object list entries: "PID N (role@database): query" — the query text is cut to 80 characters and ends with "…".
 
 | Check | Severity | When it fires | pgscope text | Where to look |
 |---|---|---|---|---|
@@ -74,7 +74,7 @@ What to do: when connections run short, put a connection pooler (PgBouncer) in f
 |---|---|---|---|---|
 | **Backends waiting for locks** | Warning | a backend has `wait_event_type = 'Lock'` | "These backends are blocked by other transactions." | **Locks** |
 | **Deadlocks detected** | Info | the database's `deadlocks` counter is above 0. List entries: "database — deadlocks: N" | "Deadlocks have occurred since the last statistics reset." | **Locks** |
-| **Deadlocks in logs** | Warning | pgmetrics found deadlock messages in the log during the collection window. List entries: time and the first line of the details | "Deadlocks were found in the PostgreSQL log." | **Logs** |
+| **Deadlocks in logs** | Warning | pgmetrics found deadlock messages in the log during the collection window. List entries: time (in UTC) and the first line of the details | "Deadlocks were found in the PostgreSQL log." | **Logs** |
 
 What to do: find the lock chain and the session at its head on the [**Locks**](activity.md#locks) page. Deadlocks are fixed in the application: transactions should lock rows and tables in the same order. The log-based check works only if pgmetrics reads the log (see [Logs](server.md#logs)).
 
@@ -106,11 +106,11 @@ What to do: `VACUUM FULL` locks the table for its whole run, `pg_repack` rebuild
 | Check | Severity | When it fires | pgscope text | Where to look |
 |---|---|---|---|---|
 | **Unused indexes** | Warning | `idx_scan = 0`, no `UNIQUE` in the definition, larger than 1 MiB. List entries: "database.schema.index (size)" | "These non-unique indexes have not been scanned since the last statistics reset. They slow down writes; consider dropping them." | **Index management** |
-| **Duplicate indexes** | Warning | indexes in the same database have the same definition after removing `CREATE [UNIQUE] INDEX [CONCURRENTLY] name ON`. List entries: "index = index" | "These indexes have identical definitions; keep only one." | **Index management** |
+| **Duplicate indexes** | Warning | indexes in the same database have the same definition after removing `CREATE [UNIQUE] INDEX [CONCURRENTLY] name ON`, and one of them can be dropped without losing a constraint (the rules are in [Duplicates](objects.md#duplicate-indexes)). List entries: "database.schema.index duplicates database.schema.index" — first the index you can drop, then the one to keep | "Each of these indexes duplicates another one and can be dropped. Unique indexes, including those of primary keys and constraints, are not proposed for dropping while a non-unique duplicate exists." | **Index management** |
 | **Bloated indexes** | Warning | there is a bloat estimate, larger than 10 MiB, bloat above 30% | "Rebuild them with REINDEX CONCURRENTLY." | **Index management** |
 
 > [!WARNING]
-> The **Unused indexes** advice is based only on `idx_scan = 0` on the current server. It does not account for index use on standbys (each standby has its own statistics), for counters zeroed by `pg_stat_reset()` or a crash restart, or for rare queries. **Duplicate indexes** does not distinguish a unique index from a regular one on the same columns — drop the non-unique one. Read [Index management](objects.md#index-management) before dropping anything.
+> The **Unused indexes** advice is based only on `idx_scan = 0` on the current server. It does not account for index use on standbys (each standby has its own statistics), for counters zeroed by `pg_stat_reset()` or a crash restart, or for rare queries. Exclusion-constraint indexes (`*_excl`) are non-unique and are not filtered out of **Unused indexes**, but PostgreSQL will not let you drop them. **Duplicate indexes** recognizes constraint indexes only by their default names (`*_pkey`, `*_key`, `*_excl`), because pgmetrics reports no constraints. Read [Index management](objects.md#index-management) before dropping anything.
 
 ### Other checks {#diag-other}
 

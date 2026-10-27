@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import uPlot from 'uplot'
 import { api } from '../lib/api'
 import { useSrv } from '../lib/server'
-import { fmtBytes, fmtDec, fmtDur, fmtMs, fmtNum, LOCALE } from '../lib/format'
+import { fmtBytes, fmtDate, fmtDec, fmtDur, fmtMs, fmtNum, TZ } from '../lib/format'
 import { t, useLang } from '../lib/i18n'
 import { Card, Spinner } from './ui'
 
@@ -56,7 +56,7 @@ function xTicks(u: uPlot, vals: number[], incr: number) {
   const o: Intl.DateTimeFormatOptions = span < 36 * 3600 ? { hour: '2-digit', minute: '2-digit' }
     : incr < 86400 ? { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }
     : { day: '2-digit', month: '2-digit' }
-  return vals.map(v => new Date(v * 1000).toLocaleString(LOCALE, o).replace(',', ''))
+  return vals.map(v => fmtDate(v, o).replace(',', ''))
 }
 
 const css = (v: string) => getComputedStyle(document.documentElement).getPropertyValue(v).trim()
@@ -65,7 +65,7 @@ export function Chart({ title, obj, fields, unit, height = 190, sub }: {
   title: string; obj: string; fields: Field[]; unit: Unit; height?: number; sub?: string
 }) {
   const { id, from, to, tick } = useSrv()
-  const lang = useLang() // axis/legend text and LOCALE time formats are baked into the plot
+  const lang = useLang() // axis/legend text, LOCALE time formats and TZ are baked into the plot
   const [data, setData] = useState<Series | null>(null)
   const [err, setErr] = useState<string>()
   const box = useRef<HTMLDivElement>(null)
@@ -102,6 +102,9 @@ export function Chart({ title, obj, fields, unit, height = 190, sub }: {
       padding: [8, 8, 0, 0],
       cursor: { points: { size: 8 }, drag: { x: false, y: false } },
       legend: { show: true, live: true },
+      // ticks fall on whole hours and days of TZ, not of the browser's zone; uPlot's shortcut for
+      // UTC misplaces ticks on the days the browser's zone changes clocks, Etc/GMT takes its general path
+      tzDate: ts => uPlot.tzDate(new Date(ts * 1000), TZ === 'UTC' || TZ === 'Etc/UTC' ? 'Etc/GMT' : TZ),
       scales: { x: { time: true }, y: { range: (_u, min, max) => [Math.min(0, min), max > 0 ? max * 1.08 : 1] } },
       axes: [
         {
@@ -114,7 +117,7 @@ export function Chart({ title, obj, fields, unit, height = 190, sub }: {
         },
       ],
       series: [
-        { label: t('Время'), value: (_u, v) => (v == null ? '—' : new Date(v * 1000).toLocaleString(LOCALE, { dateStyle: 'short', timeStyle: 'short' })) },
+        { label: t('Время'), value: (_u, v) => (v == null ? '—' : fmtDate(v, { dateStyle: 'short', timeStyle: 'short' })) },
         ...fields.map((f, i) => ({
           label: f.label,
           stroke: colors[i % 8],
@@ -139,7 +142,7 @@ export function Chart({ title, obj, fields, unit, height = 190, sub }: {
       plot.current?.destroy()
       plot.current = null
     }
-  }, [data, fields, unit, height, theme, hasData, lang])
+  }, [data, fields, unit, height, theme, hasData, lang, TZ])
 
   return (
     <Card title={title} sub={sub} pad={false}>
