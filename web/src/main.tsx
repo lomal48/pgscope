@@ -2,6 +2,7 @@ import { lazy, StrictMode, Suspense, useCallback, useEffect, useState, type Reac
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import { api } from './lib/api'
+import { setTZ, useTZ } from './lib/format'
 import { setLang, t, useLang } from './lib/i18n'
 import { match, usePath } from './lib/router'
 import { App, loadServers, ServerProvider, type Me, type ServerRow } from './lib/server'
@@ -21,16 +22,23 @@ function Root() {
   const path = usePath()
   // re-render the whole tree on a language switch
   const l = useLang()
+  useTZ() // and on a time zone switch
   const [me, setMe] = useState<Me | null | undefined>(undefined)
   const [servers, setServers] = useState<ServerRow[]>([])
   const [listErr, setListErr] = useState<unknown>(undefined) // undefined: the server list has not loaded yet
 
+  // signed out, dates are shown in the browser's time zone
+  const signedOut = useCallback(() => {
+    setTZ(null)
+    setMe(null)
+  }, [])
   const reloadMe = useCallback(() => {
     api<Me>('/me').then(m => {
       if (m?.lang) setLang(m.lang) // the saved language wins over the browser's
+      setTZ(m?.tz)
       setMe(m)
-    }, () => setMe(null))
-  }, [])
+    }, signedOut)
+  }, [signedOut])
   const reloadServers = useCallback(() => {
     loadServers().then(s => {
       setServers(s)
@@ -43,10 +51,9 @@ function Root() {
     if (me) reloadServers()
   }, [me, reloadServers, l])
   useEffect(() => {
-    const h = () => setMe(null)
-    addEventListener('unauthorized', h)
-    return () => removeEventListener('unauthorized', h)
-  }, [])
+    addEventListener('unauthorized', signedOut)
+    return () => removeEventListener('unauthorized', signedOut)
+  }, [signedOut])
   useEffect(() => {
     if (!me) return
     const iv = setInterval(reloadServers, 60_000)
@@ -72,7 +79,7 @@ function Root() {
     } else {
       const sub = '/' + (s['*'] ?? '')
       page = (
-        <ServerProvider srv={srv}>
+        <ServerProvider key={srv.id} srv={srv}>
           <ServerBar />
           <div className="px-6 py-5 max-w-[1600px]">{serverRoutes(srv, sub.replace(/\/$/, '') || '/')}</div>
         </ServerProvider>

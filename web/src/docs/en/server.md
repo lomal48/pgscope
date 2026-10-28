@@ -18,7 +18,7 @@ The **Standbys (N)** card lists the connected standbys from `pg_stat_replication
 | **Client** | the standby's host name (`client_hostname`, filled when `log_hostname = on`), or its address if there is none |
 | **State** | `state`: `streaming` is shown in green, the others (`catchup`, `startup`, `backup`…) in yellow |
 | **Sync state** | `sync_state`: `async`, `sync`, `potential`, `quorum` |
-| **Write lag**, **Flush lag**, **Replay lag** | how many bytes the standby's `write_lsn`, `flush_lsn` and `replay_lsn` are behind the primary's current WAL position at report time |
+| **Write lag**, **Flush lag**, **Replay lag** | how many bytes the standby's `write_lsn`, `flush_lsn` and `replay_lsn` are behind the primary's current WAL position at report time; "—" if the standby did not report that position |
 | **Replay lag time** | `replay_lag` from `pg_stat_replication` in whole seconds; if PostgreSQL reports no value (for example, the standby has caught up and no WAL is being sent), zero is shown |
 | **Last reply** | how long ago the standby last replied to the primary (`reply_time`, PostgreSQL 12+; **never** on older versions) |
 
@@ -27,7 +27,7 @@ The **Standby lag over time** block, with a standby selector on the right, shows
 How to read it: write lag grows with network problems, flush lag with a slow standby disk, replay lag when the standby cannot apply WAL fast enough or replay is held back by conflicts with queries on the standby. The diagnostics report standbys that are more than 1 GiB or 60 seconds behind (see [Checks reference](checks.md#diag-replication)).
 
 > [!NOTE]
-> The standby list shows every walsender connection, including `pg_basebackup` and `pg_receivewal`. Such clients do not report some positions (at least the replay position): the table shows "—" for them, but the lag charts, the alert rules on lag on the primary and the **Standbys are lagging** check in the current pgscope version treat the missing position as zero and show an obviously inflated lag.
+> The standby list shows every walsender connection, including `pg_basebackup` and `pg_receivewal`. Such clients, like a standby that is still starting, do not report every position (at least the replay position is missing). The table shows "—" for them, the "Standby lag: …" chart gets no points for them (the "Standby lag time: …" chart still does), the byte-lag alert rules on the primary skip them, and they appear in **Standbys are lagging** only when `replay_lag` is above 60 seconds.
 
 ### On a standby {#replication-standby}
 
@@ -37,17 +37,17 @@ When the server is in recovery, the page shows these cards at the top:
 |---|---|
 | **Receive LSN** | the last received WAL position (`pg_last_wal_receive_lsn()`) |
 | **Replay LSN** | the last replayed position (`pg_last_wal_replay_lsn()`) |
-| **Not yet replayed** | the difference between them in bytes: WAL already received but not yet applied |
+| **Not yet replayed** | the difference between them in bytes: WAL already received but not yet applied; "—" if the receive LSN is unknown (the standby does not stream WAL, for example it only restores WAL from the archive) |
 | **Last transaction** | how long ago the last transaction was replayed |
 | **Replay** | **Running** or **Paused** (`pg_is_wal_replay_paused()`) |
 | **WAL receiver** | the walreceiver status; `streaming` is normal, **not running** means the receiver is down |
 
 The **WAL receiver** card (data from `pg_stat_wal_receiver`): **Primary host**, **Slot**, **Received LSN**, **Flushed LSN**, **Timeline**, **Latency**, **Last message sent**, **Last message received** and **Connection** — the `conninfo` string (PostgreSQL hides the password in it).
 
-**Over time** charts: **Replay lag** (WAL received but not replayed, in bytes) and **Time since last replayed transaction** (in seconds).
+**Over time** charts: **Replay lag** (WAL received but not replayed, in bytes) and **Time since last replayed transaction** (in seconds). Without a receive LSN the **Replay lag** chart gets no points.
 
 > [!NOTE]
-> **Time since last replayed transaction** also grows when the primary simply has no writes: there is nothing to replay. Rely on the lag in bytes. The diagnostics take this into account: the **Standby is not keeping up with WAL replay** check fires only if the last transaction was replayed more than 5 minutes ago and the received WAL has not been fully replayed.
+> **Time since last replayed transaction** also grows when the primary simply has no writes: there is nothing to replay. Rely on the lag in bytes. The diagnostics take this into account: the **Standby is not keeping up with WAL replay** check fires only if the last transaction was replayed more than 5 minutes ago, the receive LSN is known and the received WAL has not been fully replayed.
 
 If replay is paused, resume it on the standby:
 
@@ -67,11 +67,11 @@ The **Replication slots (N)** block shows all slots on the server.
 | **Database** | the logical slot's database |
 | **Active** | **active** if a consumer is connected to the slot, otherwise **inactive** |
 | **WAL status** | `wal_status`: `reserved`, `extended`, `unreserved` or `lost` |
-| **Retained WAL** | how much WAL the slot retains: the current position minus `restart_lsn` |
+| **Retained WAL** | how much WAL the slot retains: the current position minus `restart_lsn`; "—" if `restart_lsn` is empty (WAL has not been reserved for the slot yet or has been lost) |
 | **Safe WAL size** | `safe_wal_size` — how much more WAL can be written before the slot loses data; filled when `max_slot_wal_keep_size` is set |
 | **xmin** | the slot's `xmin` or `catalog_xmin` |
 
-Below the table is the "WAL retained by slot …" chart for the slot chosen in the selector.
+Below the table is the "WAL retained by slot …" chart for the slot chosen in the selector. A slot without `restart_lsn` gets no points on it.
 
 An inactive slot is a common cause of a full disk: PostgreSQL does not remove WAL until the slot's consumer has read it. In addition, the slot's `xmin` and `catalog_xmin` stop vacuum from removing old row versions, which leads to bloat and growing XID age. What to do:
 
@@ -259,7 +259,7 @@ The **Logs** page shows the PostgreSQL log entries pgmetrics read and parsed whi
 
 - The **All levels** selector filters by level (`LOG`, `WARNING`, `ERROR`, `FATAL`…), the **Filter…** box searches the text, user and database.
 - Columns: **Time**, **Level** (`PANIC`, `FATAL`, `ERROR` in red, `WARNING` in yellow), **User@database**, **Message**. Related lines (`DETAIL`, `HINT` and so on) are shown under the message.
-- To see entries from an earlier period, select an older report in the server bar. Full reports are kept for `PGSCOPE_REPORT_RETENTION_DAYS` days (14 by default, see [Data storage](data.md#retention)).
+- To see entries from an earlier period, select an older report in the server bar. Full reports are kept for `PGSCOPE_REPORT_RETENTION_DAYS` days (14 by default, `0` keeps them forever, see [Data storage](data.md#retention)).
 
 From the same entries pgmetrics extracts the autovacuum history, deadlocks (shown on the [**Locks**](activity.md#locks) page and in the diagnostics) and `auto_explain` plans (the query page under [**Queries**](activity.md#queries)).
 
@@ -267,15 +267,17 @@ With no entries the page says **No log entries**. Conditions for the log to get 
 
 - pgmetrics reads log files only if its connection to PostgreSQL is local (a Unix socket, a loopback address, or matching client and server addresses) and the OS user it runs as can read the files. It looks for the files in this order: the file from `--log-file`; all files in the `--log-dir` directory except `.gz` and `.bz2`; the current log file from `pg_current_logfile()`; the most recent file in `/var/log/postgresql`. The `--log-file` and `--log-dir` flags only tell it where the files are; they do not make a remote connection work.
 - For AWS RDS and Aurora the log is read through the AWS API when pgmetrics runs with `--aws-rds-dbid`.
-- `log_line_prefix` must contain a timestamp (`%t`, `%m` or `%n`), otherwise pgmetrics cannot parse the log. The default `'%m [%p] '` works.
+- For a log in `stderr` format, `log_line_prefix` must contain a timestamp (`%t`, `%m` or `%n`), otherwise pgmetrics cannot parse the log. The default `'%m [%p] '` works.
 - pgmetrics recognizes levels and service messages (autovacuum, deadlocks) by their English text. If the server writes its log in another language, set `lc_messages = 'C'` (or an English locale).
-- The log must be written in the `stderr` format. If `log_destination` includes `csvlog` and `logging_collector` is on, pgmetrics reads the CSV file, but the version in use expects 23 fields per line while PostgreSQL 13+ writes more, so the report will have no entries. pgmetrics does not parse the `jsonlog` format.
+- The log is written in `stderr` or `csvlog` format. If `log_destination` includes `csvlog` and `logging_collector` is on, pgmetrics reads the CSV file. PostgreSQL 13+ `csvlog` is read only by the pgmetrics that pgscope builds (a version with `+pgscope` in the **Collected by** row on **Overview**, see [pgmetrics built by pgscope](collect.md#pgmetrics-build)): official releases expect 23 fields per line while PostgreSQL 13+ writes more, so the report will have no entries. With official pgmetrics keep `stderr`. pgmetrics does not parse the `jsonlog` format.
+- With official pgmetrics, `log_timezone` must match the time zone of the host where pgmetrics runs, or be `'UTC'`. Otherwise entry times are shifted by the zone offset, and with a zone west of UTC the entries do not reach the report. [pgmetrics built by pgscope](collect.md#pgmetrics-build) reads times in the `log_timezone` zone and works with any combination of zones, see [PostgreSQL log](postgres.md#logs).
 - `--omit=log` turns off log reading.
 
 To avoid gaps between reports, set `--log-span` equal to the collection interval (see [Sending reports](collect.md)).
 
 ```ini
 # postgresql.conf: a log that pgmetrics can parse
+log_destination = 'stderr'              # or 'csvlog' with pgmetrics built by pgscope
 log_line_prefix = '%m [%p] %q%u@%d '
 lc_messages = 'C'
 log_autovacuum_min_duration = 1000

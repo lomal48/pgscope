@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { Database } from 'lucide-react'
+import { Database, History } from 'lucide-react'
+import { fmtTime } from '../../lib/format'
 import { t } from '../../lib/i18n'
 import { match } from '../../lib/router'
 import { useSrv, type ServerRow } from '../../lib/server'
@@ -14,7 +15,19 @@ import { Chat } from './Chat'
 
 // pages that render from the latest report need it loaded first
 function NeedsReport({ children }: { children: ReactNode }) {
-  const { report, error } = useSrv()
+  const { report, error, pinnedAt, firstAt, setPinnedAt } = useSrv()
+  // the moment is before the oldest report kept (PGSCOPE_REPORT_RETENTION_DAYS)
+  if (error?.status === 404 && pinnedAt && firstAt && firstAt > pinnedAt) {
+    return (
+      <Card><Empty icon={<History className="size-8" />} title={t('Нет отчёта на этот момент')}>
+        {t('Полные отчёты хранятся ограниченное время. Самый ранний сохранённый отчёт — от {time}.', { time: fmtTime(firstAt) })}
+        <div className="mt-4 flex justify-center gap-2">
+          <button className="btn btn-sm" onClick={() => setPinnedAt(firstAt)}>{t('Самый ранний отчёт')}</button>
+          <button className="btn btn-primary btn-sm" onClick={() => setPinnedAt(null)}>{t('Последний отчёт')}</button>
+        </div>
+      </Empty></Card>
+    )
+  }
   if (error) {
     return error.status === 404 ? (
       <Card><Empty icon={<Database className="size-8" />} title={t('Отчёт ещё не получен')}>{t('Отправьте отчёт pgmetrics для этого сервера, чтобы увидеть его данные.')}</Empty></Card>

@@ -114,9 +114,9 @@ The text language is set per channel, see [Notification language](notifications.
 
 ## Detected changes {#history}
 
-Below the notifications card, the page shows the list **Detected changes (N)**, newest first. Each card is one report with changes: the title is the time of the new report, the subtitle reads "compared with the report from …", followed by a table with the columns **Change**, **Before** and **After**. Until something changes, the page shows **No changes detected yet**.
+Below the notifications card, the page shows the list **Detected changes (N)**, newest first. Each card is one report with changes: the title is the time of the new report, the subtitle reads "compared with the report from …", followed by a table with the columns **Change**, **Before** and **After**. The **Open report** button opens the server's **Overview** as of the new report; the previous report is one **‹** away (see [Viewing a past report](ui.md#report-picker)). Until something changes, the page shows **No changes detected yet**.
 
-Entries are recorded even if no notification channels are configured. The page shows up to the server's last 200 events (together with the regular alert history). Entries are kept for `PGSCOPE_METRICS_RETENTION_DAYS` days (90 by default), see [Data storage](data.md#retention).
+Entries are recorded even if no notification channels are configured. The page shows up to the server's last 200 events (together with the regular alert history). Entries are kept for `PGSCOPE_METRICS_RETENTION_DAYS` days (90 by default; `0` keeps them forever), see [Data storage](data.md#retention).
 
 ## Examples {#examples}
 

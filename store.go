@@ -100,6 +100,7 @@ create table if not exists events (
 );
 create index if not exists events_idx on events (server_id, at);
 alter table users add column if not exists lang text;            -- ru | en, null = not chosen
+alter table users add column if not exists tz text;              -- IANA time zone of the web UI, null = the browser's
 alter table notifiers add column if not exists lang text not null default 'ru';
 create table if not exists agents (           -- Docker agents, upserted by their heartbeat
   owner_id bigint not null references users on delete cascade,

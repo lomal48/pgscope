@@ -6,7 +6,7 @@ This page describes the **Monitor** group of a PostgreSQL server: the **Overview
 
 The **Overview** opens when you click a server card on the **Servers** page, pick a server in the switcher or choose **Overview** in the menu (address `#/s/<id>`). The header shows the full PostgreSQL version string and a role badge: **Primary** or **Standby**.
 
-All values except alerts come from the displayed report — the latest one or the one selected in the top bar (see [Viewing a past report](ui.md#report-picker)). If the server has not sent a single report yet, the page shows **No report received yet**.
+All values except alerts come from the displayed report — the latest one or the report of the moment selected in the top bar (see [Viewing a past report](ui.md#report-picker)). If the server has not sent a single report yet, the page shows **No report received yet**, and if the selected moment is earlier than the earliest stored report, **No report at this moment**.
 
 ### Metric cards {#overview-stats}
 
@@ -36,11 +36,11 @@ The **Cluster** card collects instance-level information.
 | **Checkpoint / REDO LSN** | WAL positions of the last checkpoint and of its REDO start point |
 | **Current WAL LSN** | the current WAL write position (on a primary) |
 | **Replay LSN** | the position of the last replayed WAL (on a standby, instead of the previous field) |
-| **Transaction IDs** | how many transaction IDs are in use (next XID minus the oldest) and the share of the 2,147,483,647 limit; the oldest and next XID on hover |
+| **Transaction IDs** | how many transaction IDs are in use (next XID minus the oldest, modulo 2³²) and the share of the 2,147,483,647 limit; the oldest and next XID on hover |
 | **Notification queue** | LISTEN/NOTIFY queue usage as a percentage |
 | **Configuration reloaded** | time from the last configuration reload to the report |
 | **Data directory** | the `data_directory` value; "—" if the setting is not visible to the monitoring role |
-| **Collected by** | the pgmetrics version; the **(local)** mark means pgmetrics ran on the database host |
+| **Collected by** | the version of pgmetrics that collected the report, for example "pgmetrics 1.19.1"; the **(local)** mark means pgmetrics ran on the database host. Reports without the pgmetrics version show "pgmetrics (report schema 1.x)": that is the version of the report format, not of pgmetrics |
 
 Things worth attention: an old last checkpoint under active writes (check `checkpoint_timeout` and the [WAL](server.md#wal) page), a high share of transaction IDs in use (see [Vacuum](server.md#vacuum)), non-zero notification queue usage (some listener is not consuming notifications).
 
@@ -48,7 +48,7 @@ Things worth attention: an old last checkpoint under active writes (check `check
 
 The **Active alerts** card shows up to 20 triggered alerts: a severity icon, the rule text, the object and the current value. The **Manage** button opens the rules page (see [Alert rules](alerts.md)). If nothing is triggered, it says **No triggered alerts**.
 
-The card and the **Alerts** counter always show the current alert state, even when a past report is selected in the top bar.
+The card and the **Alerts** counter always show the current alert state, even when a past moment is selected in the top bar; the card then reads **Current state, not as of the report** under its title.
 
 ### Activity charts {#overview-charts}
 
@@ -60,10 +60,10 @@ The **Activity** section contains charts for the range selected in the top bar (
 | **Backends** | **Total**, **Active**, **Idle in transaction**, **Waiting for locks** | client connections by state; growth of **Waiting for locks** is a reason to open [Locks](activity.md#locks) |
 | **Rows** | **Fetched**, **Inserted**, **Updated**, **Deleted** | rows per second across all databases (`tup_fetched`, `tup_inserted`, `tup_updated`, `tup_deleted`) |
 | **Cache hit ratio** | **Hit ratio** | `shared_buffers` hit ratio for each interval between reports |
-| **WAL generation** | **WAL** | WAL bytes per second from the change in WAL position; on a standby, the replay rate |
+| **WAL generation** | **WAL** | WAL bytes per second from the change in WAL position; on a standby, the replay rate. A report without the current WAL position adds no point |
 | **Total database size** | **Size** | total size of all databases |
 | **Temp files written** | **Temp files** | bytes per second written to temporary files; a persistently high value means sorts and hashes do not fit in `work_mem` |
-| **Transaction ID range** | **XIDs in use** | difference between the next and the oldest XID; normally a sawtooth — freezing regularly brings it down; steady growth without drops means freezing is not keeping up |
+| **Transaction ID range** | **XIDs in use** | difference between the next and the oldest XID (modulo 2³²); normally a sawtooth — freezing regularly brings it down; steady growth without drops means freezing is not keeping up |
 | **Load average** | **Load (1m)** | host load average; only with system metrics |
 | **Memory** | **Used**, **Cache**, **Buffers**, **Free** | host memory usage; only with system metrics |
 
@@ -113,9 +113,6 @@ A problem card contains:
 - an explanation of the problem and what to do;
 - a **Show details** / **Hide** button with the list of objects (databases, tables, indexes, backends, slots); for critical problems the list is expanded right away; the list has at most 50 lines, the rest are summarized as "… and N more";
 - a **View** button that leads to the server page where the problem is easiest to work on.
-
-> [!NOTE]
-> For two problems — **Notification queue is filling up** and **Unsupported PostgreSQL version** — the **View** button currently leads to an address that does not exist and shows **Page not found**. The information is on the [Overview](#overview): the **Notification queue** field of the **Cluster** card and the **Version** card.
 
 If there are no problems, the tab shows **No issues found** and **This server looks healthy.**
 
@@ -182,7 +179,7 @@ The chat is configured with environment variables of the pgscope process (detail
 | `PGSCOPE_AI_MODEL` | `claude-opus-5-5` | the model questions are sent to |
 | `PGSCOPE_AI_BASE_URL` | — | a different Anthropic API address, for example a corporate proxy or gateway |
 
-The `PGSCOPE_AI_PROVIDER` variable is read at startup (default `anthropic`), but there are no other providers: the chat always uses the Anthropic API.
+There are no other providers: the chat always uses the Anthropic API. The `PGSCOPE_AI_PROVIDER` variable from earlier versions is no longer read; you can remove it from your settings.
 
 The variables are read only at startup, so pgscope must be restarted after a change:
 

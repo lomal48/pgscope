@@ -130,7 +130,7 @@ Sorted by lag by default (largest first). Clicking a row opens the server's **Re
 |---|---|---|
 | **Role** | **primary** or **standby** | — |
 | **Standbys** | number of connected WAL receivers (rows of `pg_stat_replication`) | — |
-| **Max lag** | on a primary, the largest standby lag in bytes (current LSN minus `replay_lsn`); on a standby, the WAL received but not yet replayed, or, if it has cascading standbys of its own, the largest of these values | yellow above 64 MiB, red above 1 GiB |
+| **Max lag** | on a primary, the largest standby lag in bytes (current LSN minus `replay_lsn`); on a standby, the WAL received but not yet replayed, or, if it has cascading standbys of its own, the largest of these values; "—" when there is replication but no lag is known (PostgreSQL did not report the WAL position needed, for example for `pg_basebackup` or a standby without a WAL receiver) | yellow above 64 MiB, red above 1 GiB |
 | **Max time lag** | on a primary, the largest `replay_lag`; on a standby, the time since the last transaction was replayed | — |
 | **Inactive slots** | replication slots nobody is connected to | yellow above 0 |
 
@@ -143,7 +143,7 @@ This tab helps assess the transaction ID wraparound risk. Sorted by the share of
 
 | Column | What it shows | Highlighting |
 |---|---|---|
-| **XID range used** | (next XID − oldest XID) / 2,147,483,647, with a bar | bar green up to 40%, yellow above 40%, red above 75% |
+| **XID range used** | (next XID − oldest XID) / 2,147,483,647, with a bar; the difference is taken modulo 2³², as PostgreSQL does, so it stays correct after the cluster's transaction counter passes 2³² | bar green up to 40%, yellow above 40%, red above 75% |
 | **Oldest database (% of freeze_max_age)** | the highest `age(datfrozenxid)` among the server's databases as a percentage of `autovacuum_freeze_max_age` | — |
 | **Long-running transactions** | backends whose transaction has been open for more than 5 minutes | yellow above 0 |
 
@@ -151,7 +151,7 @@ Long-running transactions prevent rows from being frozen and the counter from st
 
 ### Disk & WAL tab {#inspector-disk}
 
-Sorted by free space by default (least first). With this sort, servers without disk data (**n/a**) come at the very top, before servers with real values. Clicking a row opens the server's **WAL & checkpoints** page (see [WAL](server.md#wal)).
+Sorted by free space by default (least first). Servers without disk data (**n/a**) go to the end of the list in either sort direction, after the servers with real values. Clicking a row opens the server's **WAL & checkpoints** page (see [WAL](server.md#wal)).
 
 | Column | What it shows | Highlighting |
 |---|---|---|
@@ -159,7 +159,7 @@ Sorted by free space by default (least first). With this sort, servers without d
 | **WAL files** | number of files in `pg_wal` | — |
 | **Ready to archive** | WAL files ready for archiving but not yet archived | yellow above 10 |
 | **Archiving** | **failing** if the latest archive attempt failed after the latest successful one, otherwise **ok** | **failing** in red |
-| **Load average** | 1-minute load average; **n/a** without system metrics (and when the load is zero) | — |
+| **Load average** | 1-minute load average; **n/a** without system metrics; a zero load is shown as a number | — |
 | **Memory used** | used memory as a percentage of the total (used + free + buffers + cache); **n/a** without system metrics | — |
 
 Disk, load and memory data are available only when pgmetrics collects system metrics: it does so when it runs on the same Linux host as PostgreSQL (connecting through a Unix socket or a local address). When pgmetrics runs from another machine, these columns show **n/a** (see [System](server.md#system)).

@@ -24,7 +24,6 @@
   "Присоединиться к команде": "Join the team",
   "Вас пригласили просматривать сервер «{server}». Задайте пароль для {email}.": "You've been invited to view the server “{server}”. Set a password for {email}.",
   "Принять приглашение": "Accept invitation",
-
   "соберите метрики с помощью pgmetrics и отправьте их через pgdash CLI": "collect metrics with pgmetrics and send them with the pgdash CLI",
   "общий": "shared",
   "реплика": "standby",
@@ -41,7 +40,6 @@
   "Отправьте первый отчёт pgmetrics, и сервер появится здесь.": "Send your first pgmetrics report and the server will show up here.",
   "Другие варианты подключения — на {link}.": "For other ways to connect, see your {link}.",
   "странице профиля": "profile page",
-
   "Сервер": "Server",
   "Инспектор": "Inspector",
   "Ключевые показатели состояния всех ваших серверов": "Key health metrics across all your servers",
@@ -78,7 +76,6 @@
   "норма": "ok",
   "Средняя нагрузка": "Load average",
   "Использовано памяти": "Memory used",
-
   "Сгенерировать новый API-ключ? Текущий ключ сразу перестанет работать.": "Generate a new API key? The current key will stop working immediately.",
   "Пароль изменён.": "Password changed.",
   "Удалить аккаунт?": "Delete your account?",
@@ -92,9 +89,12 @@
   "Установите {pgmetrics} и {pgdash} с открытым исходным кодом, затем запускайте эту команду каждые 5 минут (через cron или в цикле).": "Install the open-source {pgmetrics} and {pgdash}, then run this command every 5 minutes (from cron or in a loop).",
   "Интервал между отчётами одного сервера — не менее {interval}.": "Reports for the same server must be at least {interval} apart.",
   "Планы запросов и AWS RDS / Aurora": "Query plans and AWS RDS / Aurora",
-  "Включите {pgss} для статистики запросов и {autoexplain} (формат JSON) для планов выполнения. Планы, взаимоблокировки и автоочистку pgmetrics берёт из журнала, который читает, только если запущен на хосте базы данных с локальным подключением; {logfile} лишь указывает путь к файлу, а журнал нужен в формате stderr (csvlog PostgreSQL 13+ pgmetrics пропускает). Для RDS и Aurora добавьте {rds}, чтобы собирать метрики CloudWatch и журнал через API RDS.": "Enable {pgss} for query statistics and {autoexplain} (JSON format) for execution plans. pgmetrics takes plans, deadlocks and autovacuum runs from the log, which it reads only when it runs on the database host over a local connection; {logfile} only sets the file path, and the log must be in stderr format (pgmetrics skips PostgreSQL 13+ csvlog). For RDS and Aurora, add {rds} to collect CloudWatch metrics and the log through the RDS API.",
+  "Включите {pgss} для статистики запросов и {autoexplain} (формат JSON) для планов выполнения. Планы, взаимоблокировки и автоочистку pgmetrics берёт из журнала, который читает, только если запущен на хосте базы данных с локальным подключением; {logfile} лишь указывает путь к файлу. Журнал подходит в формате stderr или csvlog, но csvlog PostgreSQL 13+ читает только pgmetrics, собранный pgscope ({build} или из образа агента): официальные выпуски pgmetrics такие файлы пропускают. Для RDS и Aurora добавьте {rds}, чтобы собирать метрики CloudWatch и журнал через API RDS.": "Enable {pgss} for query statistics and {autoexplain} (JSON format) for execution plans. pgmetrics takes plans, deadlocks and autovacuum runs from the log, which it reads only when it runs on the database host over a local connection; {logfile} only sets the file path. The log can be in stderr or csvlog format, but PostgreSQL 13+ csvlog is read only by the pgmetrics that pgscope builds ({build}, or the one in the agent image): official pgmetrics releases skip such files. For RDS and Aurora, add {rds} to collect CloudWatch metrics and the log through the RDS API.",
   "Язык": "Language",
   "Язык сохраняется в вашем профиле.": "Your language preference is saved to your profile.",
+  "Часовой пояс": "Time zone",
+  "Даты и время в интерфейсе показываются в этом часовом поясе. Он сохраняется в вашем профиле.": "Dates and times in the interface are shown in this time zone. It is saved to your profile.",
+  "Как в браузере ({zone})": "Same as the browser ({zone})",
   "Смена пароля": "Change password",
   "Текущий пароль": "Current password",
   "Новый пароль": "New password",
@@ -103,7 +103,6 @@
   "Удаление аккаунта не затронет серверы, к которым вам открыли доступ.": "Deleting your account won't affect servers shared with you.",
   "Вместе с аккаунтом будут удалены все ваши серверы и все их данные.": "All your servers and all their data will be deleted along with your account.",
   "Удалить аккаунт": "Delete account",
-
   "Кратко оцени состояние этого сервера.": "Briefly assess the health of this server.",
   "Какие запросы оптимизировать в первую очередь и как?": "Which queries should I optimize first, and how?",
   "Какие индексы стоит удалить или добавить?": "Which indexes should I drop or add?",

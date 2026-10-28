@@ -65,7 +65,6 @@
   "отключена": "disabled",
   "Рабочие процессы": "Workers",
   "Ошибки (применение / синхр.)": "Errors (apply / sync)",
-
   "WAL и контрольные точки": "WAL & checkpoints",
   "Файлы WAL": "WAL files",
   "Готовы к архивации": "Ready to archive",
@@ -124,7 +123,6 @@
   "Попадания": "Hits",
   "Вытеснения": "Evictions",
   "Вызовы fsync": "Fsyncs",
-
   "Очистка (VACUUM)": "VACUUM",
   "Таблица": "Table",
   "Фаза": "Phase",
@@ -163,7 +161,6 @@
   "Время": "Time",
   "Длительность": "Duration",
   "Настройки": "Settings",
-
   "Конфигурация": "Configuration",
   "параметр ожидает перезапуска|параметра ожидают перезапуска|параметров ожидают перезапуска": "setting pending restart|settings pending restart",
   "Проверка конфигурации": "Configuration check",
@@ -179,7 +176,6 @@
   "Текущее": "Current",
   "Рекомендация": "Recommendation",
   "Загрузка…": "Loading…",
-
   "Система": "System",
   "В этом отчёте нет системных метрик": "This report has no system metrics",
   "pgmetrics собирает нагрузку, использование памяти и дисков, если запущен на одном хосте с PostgreSQL. Для AWS RDS / Aurora см. раздел «Облачные метрики».": "pgmetrics collects load, memory and disk usage when it runs on the same host as PostgreSQL. For AWS RDS / Aurora, see Cloud metrics.",
@@ -199,16 +195,14 @@
   "Ядра": "Cores",
   "Подкачка (swap)": "Swap",
   "Использование диска по табличным пространствам": "Disk usage by tablespace",
-
   "Журнал": "Logs",
   "Записи журнала PostgreSQL, разобранные pgmetrics за период этого отчёта": "PostgreSQL log entries parsed by pgmetrics for this report's period",
   "Нет записей журнала": "No log entries",
-  "pgmetrics читает журнал PostgreSQL, только если запущен на хосте базы данных и подключается локально (через сокет или 127.0.0.1); {logFile} лишь указывает путь к файлу. Для AWS RDS / Aurora журнал загружается через API RDS с {rdsId}. Формат журнала — stderr ({dest}) с меткой времени в {prefix}: файлы csvlog PostgreSQL 13+ pgmetrics пропускает.": "pgmetrics reads the PostgreSQL log only when it runs on the database host and connects locally (socket or 127.0.0.1); {logFile} only sets the file path. For AWS RDS / Aurora the log is downloaded through the RDS API with {rdsId}. The log must be in stderr format ({dest}) with a timestamp in {prefix}: pgmetrics skips PostgreSQL 13+ csvlog files.",
+  "pgmetrics читает журнал PostgreSQL, только если запущен на хосте базы данных и подключается локально (через сокет или 127.0.0.1); {logFile} лишь указывает путь к файлу. Для AWS RDS / Aurora журнал загружается через API RDS с {rdsId}. Формат журнала — stderr ({dest}) с меткой времени в {prefix} или csvlog; csvlog PostgreSQL 13+ читает только pgmetrics, собранный pgscope ({build}), официальные выпуски его пропускают.": "pgmetrics reads the PostgreSQL log only when it runs on the database host and connects locally (socket or 127.0.0.1); {logFile} only sets the file path. For AWS RDS / Aurora the log is downloaded through the RDS API with {rdsId}. The log must be in stderr format ({dest}) with a timestamp in {prefix}, or csvlog; PostgreSQL 13+ csvlog is read only by the pgmetrics that pgscope builds ({build}), official releases skip it.",
   "Все уровни": "All levels",
   "Уровень": "Level",
   "Пользователь@база": "User@database",
   "Сообщение": "Message",
-
   "Облачные метрики": "Cloud metrics",
   "Нет облачных метрик": "No cloud metrics",
   "Чтобы собирать метрики CloudWatch / Azure Monitor, запускайте pgmetrics с параметром {flag} (AWS RDS / Aurora) или с параметрами Azure.": "To collect CloudWatch / Azure Monitor metrics, run pgmetrics with {flag} (AWS RDS / Aurora) or with the Azure options.",

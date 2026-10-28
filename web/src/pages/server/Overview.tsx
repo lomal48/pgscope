@@ -10,7 +10,7 @@ import { DataTable } from '../../components/Table'
 import { Badge, Card, Empty, ErrorBox, KV, Loading, PageHeader, Section, SevBadge, SevIcon, Stat, Stats, Tabs, cx } from '../../components/ui'
 
 export function Overview() {
-  const { report: r, srv } = useSrv()
+  const { report: r, srv, pinnedAt } = useSrv()
   const R = r!
   const dbs = arr(R.databases)
   const size = dbs.reduce((a, d) => a + (d.size > 0 ? d.size : 0), 0)
@@ -24,8 +24,8 @@ export function Overview() {
   const at = R.meta.at
   const sys = R.system
   const alerts = srv.alerts
-  // user_agent is "pgmetrics/1.19.1"; meta.version is only the report schema version
-  const collector = R.meta.user_agent?.replace('/', ' ') || t('pgmetrics (схема отчёта {v})', { v: R.meta.version })
+  // user_agent is "pgmetrics/1.19.1" (+ " pgdash/1.10" when sent by the pgdash CLI); meta.version is only the report schema version
+  const collector = R.meta.user_agent?.split(' ').map((s: string) => s.replace('/', ' ')).join(', ') || t('pgmetrics (схема отчёта {v})', { v: R.meta.version })
 
   return (
     <>
@@ -57,7 +57,7 @@ export function Overview() {
             [t('Собрано'), R.meta.local ? t('{collector} (локально)', { collector }) : collector],
           ]} />
         </Card>
-        <Card title={t('Активные оповещения')} actions={<a className="btn btn-sm btn-ghost" href={`#/s/${srv.id}/alerts`}>{t('Управление')}<ArrowRight className="size-3.5" /></a>}>
+        <Card title={t('Активные оповещения')} sub={pinnedAt ? t('Текущее состояние, не на момент отчёта') : undefined} actions={<a className="btn btn-sm btn-ghost" href={`#/s/${srv.id}/alerts`}>{t('Управление')}<ArrowRight className="size-3.5" /></a>}>
           {alerts.length === 0 ? (
             <div className="flex items-center gap-2 text-muted py-6 justify-center"><CheckCircle2 className="size-4 text-good" />{t('Нет сработавших оповещений')}</div>
           ) : (

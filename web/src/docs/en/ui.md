@@ -22,7 +22,7 @@ When a server is open, a server switcher and the sections of that server appear 
 
 ### Server switcher {#server-switcher}
 
-A drop-down list of all servers you can access. Pgpool servers have a `(pgpool)` suffix. Picking a server opens its **Overview** page. The interface reloads the server list once a minute, so a new server appears in the switcher at most a minute after its first report (or immediately after a page reload).
+A drop-down list of all servers you can access. Pgpool servers have a `(pgpool)` suffix. Picking a server opens its **Overview** page; if a past moment is selected in the top bar, the other server opens at the same moment (see [Viewing a past report](#report-picker)). The interface reloads the server list once a minute, so a new server appears in the switcher at most a minute after its first report (or immediately after a page reload).
 
 ### PostgreSQL server sections {#server-sections}
 
@@ -54,7 +54,7 @@ A Pgpool server has a shorter menu: a single **Pgpool** group with **Overview** 
 | **Русский** / **English** | switches the interface language and saves the choice to your profile (see [Interface language](#language)) |
 | **Sign out** | ends the session and returns to the sign-in page |
 
-A session lasts 30 days from sign-in. When it expires, the interface shows the sign-in page on its next request to the server.
+A session lasts 30 days from sign-in. When it expires, the interface shows the sign-in page on its next request to the server. Changing the password in the profile ends all other sessions of the account, in other browsers and on other devices; the session that changed the password stays signed in (see [Changing the password](teams.md#password)).
 
 ### Mobile layout {#mobile}
 
@@ -62,37 +62,47 @@ On narrow screens (below 1024 pixels) the side menu is hidden. A bar with a menu
 
 ## Server top bar {#server-bar}
 
-The bar is pinned above every server page and contains, from left to right: the freshness indicator and server name, the report list, the chart range buttons, the refresh button, the AI chat button and the help button.
+The bar is pinned above every server page and contains, from left to right: the freshness indicator and server name, report navigation (the **‹** and **›** buttons, a button with the time of the displayed report and, while a past moment is selected, the **Latest** button), the chart range buttons, the refresh button, the AI chat button and the help button. On a narrow screen the bar takes three rows: the server name, report navigation, the other buttons.
 
 ### Report freshness {#freshness}
 
-Next to the server name there is a colored dot and a caption such as **reported 3 min ago**. Hovering over the caption shows the exact date and time of the report.
+Next to the server name there is a colored dot and a caption such as **reported 3 min ago**. The dot and the caption always refer to the server's latest report, not to the displayed one: while a past moment is selected, the caption reads **latest report 3 min ago**. Hovering over the caption shows the exact date and time of the latest report.
 
 | Dot color | Meaning |
 |---|---|
-| green | the displayed report is at most 15 minutes old |
-| yellow | the displayed report is more than 15 minutes old — the caption turns yellow too |
+| green | the server's latest report is at most 15 minutes old |
+| yellow | the latest report is more than 15 minutes old — the caption turns yellow too |
+| gray | the server has not sent a report yet |
 
-A yellow dot while the latest report is displayed means new reports are not arriving: check the cron job, the agent or the collector's log (see [Sending reports](collect.md) and [Troubleshooting](troubleshooting.md)). If you have picked a past report older than 15 minutes, the dot is yellow as well — that is expected.
+A yellow dot means new reports are not arriving: check the cron job, the agent or the collector's log (see [Sending reports](collect.md) and [Troubleshooting](troubleshooting.md)).
 
 ### Viewing a past report {#report-picker}
 
-The **Latest report** drop-down lets you look at the server in the past: which queries, backends, locks, settings and diagnostics results there were at the moment of a particular report.
+Report navigation lets you look at the server in the past: which queries, backends, locks, settings and diagnostics results there were at the moment of a particular report. The selected moment is kept in the page address (`?at=`), so you can send it as a link (see [Page addresses](#urls)).
 
-- The list contains the main server's reports for the last 30 days, newest first, but no more than the latest 500. With a report every 5 minutes that is about 41 hours of history; with a report every minute, about 8 hours.
-- History depth is also limited by the raw report retention `PGSCOPE_REPORT_RETENTION_DAYS` (14 days by default; the latest report is always kept) — see [Data storage](data.md#retention).
-- While a past report is selected, automatic refresh is off and all charts end at the time of that report.
-- The selection is kept while you move between pages of the same server and is reset when you switch to another server or leave the server pages.
-- To return to current data, pick **Latest report** in the list.
+- **‹ and ›** open the previous and the next report. The button tooltip shows the time of the neighbouring report and the distance to it, which makes gaps in reporting visible.
+- **The time button** shows the time of the report on screen and opens the **Go to a moment** dialog:
+  - the **Date and time** field is in the [UI time zone](#time-zone): the nearest report at or before that minute opens; the earliest stored report is named below the field;
+  - the **−24h**, **−1h**, **+1h** and **+24h** buttons shift the moment from the displayed report; a result in the future opens the latest report;
+  - **Link to this report** is the address of the current page with the moment of the displayed report (even when the latest report is displayed); the copy button is there only over HTTPS or on `localhost`, otherwise select the address and copy it by hand;
+  - the **Use the [ and ] keys to move between reports** checkbox turns the keyboard shortcuts on and off (the choice is remembered in the browser).
+- **Keys.** `[` and `]` open the previous and the next report, `Shift+[` and `Shift+]` the report an hour earlier or later than the displayed one. The keys do nothing while the cursor is in an input field or the **Go to a moment** dialog is open, or together with Ctrl, Cmd or Alt (Cmd+[ on macOS stays the browser's Back). If the shortcuts get in the way, turn them off with the checkbox in the **Go to a moment** dialog.
+- **Clicking a chart with the mouse** opens the report of that moment (see [Using a chart](#chart-interaction)).
+- While a past moment is selected, a colored line runs along the top edge of the bar, the time button is highlighted and automatic refresh is off. This stays so even when the selected report turns out to be the newest one, which lets you freeze the page while you study it. Reports that arrive meanwhile become reachable with **›** after you press **Refresh**.
+- **Latest** returns to the latest report and automatic refresh.
+- If there is no report at the selected moment, the nearest earlier one is shown, and when it is more than 15 minutes earlier a warning below the bar says **No report at …. Showing the nearest earlier one …**. Such a gap in reports is often the incident itself.
+- History depth is limited by the raw report retention `PGSCOPE_REPORT_RETENTION_DAYS` (14 days by default, `0` keeps reports forever; the latest report is always kept) — see [Data storage](data.md#retention). For a moment before the earliest stored report the time button turns yellow, pages built from a report show **No report at this moment** with the **Earliest report** and **Latest report** buttons, and the **›** button opens the earliest stored report. This happens, for example, with **Open report** on an old event in the alert history: events are kept longer than reports.
+- The selected moment is kept while you move between pages of the same server and when you switch to another server in the sidebar, which helps to compare a primary and a replica at the time of an incident. Server cards on the **Servers** page and links in notifications open the latest report.
+- The browser's Back and Forward buttons work with moments: going to another moment (through the dialog, a chart click, **Latest**) adds a history step, while **‹**, **›** and the keys replace the current step once a past moment is selected, so Back after a series of steps returns to where you started. If you remove `?at=` from the address by hand, the moment is kept; press **Latest** to return to current data.
 
 > [!NOTE]
-> Not everything on a server page follows the selected report. The list of triggered alerts (the **Active alerts** card and the **Alerts** counter on the **Overview**) always shows the current state, and the AI chat always answers from the latest report.
+> Not everything on a server page follows the selected report. The list of triggered alerts (the **Active alerts** card, labelled **Current state, not as of the report**, and the **Alerts** counter on the **Overview**, the **Triggered** tab of the **Alerts** page) always shows the current state, and the AI chat always answers from the latest report.
 
 ### Chart range and refresh {#ranges}
 
 The **1h**, **6h**, **24h**, **7d** and **30d** buttons set the period that all charts on server pages cover. The default is 6 hours. The choice is remembered in the browser and applies to all servers.
 
-A range longer than 30 days cannot be selected. Time-series retention is set by `PGSCOPE_METRICS_RETENTION_DAYS` (90 days by default).
+A range longer than 30 days cannot be selected. Time-series retention is set by `PGSCOPE_METRICS_RETENTION_DAYS` (90 days by default, `0` keeps them forever).
 
 While the latest report is displayed, the server page re-reads the report and the charts once a minute. The **Refresh** button (circular arrow icon) does it immediately.
 
@@ -123,11 +133,13 @@ Values are labeled in readable units: bytes (KiB, MiB, GiB), bytes per second, o
 ### Using a chart {#chart-interaction}
 
 - **Hovering.** A vertical line with points on the series appears over the chart, and the legend below the chart shows the time and the values of all series at that moment. There is no separate pop-up tooltip — values are shown in the legend.
-- **Without hovering** the legend shows the last known value of each series.
+- **Without hovering** the legend shows the last known value of each series, and while a past report is selected, the value at the time of that report.
+- **A past report on the chart.** While a past moment is selected, the chart period is built around it (the moment is near the middle; if it is closer to the current time than half the period, the chart ends at the current time), and the time of the displayed report is marked with a dashed vertical line.
+- **Clicking a chart with the mouse** opens the report of that moment: all server pages show the state at that time (see [Viewing a past report](#report-picker)). A tap on a touch screen only shows the values.
 - **Clicking a series in the legend** hides it or shows it again.
 - **Ctrl+click (Cmd+click on macOS) on a series in the legend** leaves only that series on the chart; another such click shows all series.
 - Zooming by selecting with the mouse is not supported: to see a longer or shorter period, switch the range in the top bar.
-- Time axis labels depend on the range: for ranges up to 24 hours only the time, for **7d** and **30d** the date and time or only the date.
+- Time axis labels depend on the range: for ranges up to 24 hours only the time, for **7d** and **30d** the date and time or only the date. The axis and the legend show times in the [UI time zone](#time-zone), and axis ticks are aligned to the hours and days of that zone.
 
 ### Gaps and empty charts {#chart-gaps}
 
@@ -144,7 +156,7 @@ If the selected range has fewer than two points, the chart is replaced by **Not 
 
 Tables work the same way throughout the interface:
 
-- **Sorting.** Clicking a column header sorts by that column (the first click sorts in descending order); another click reverses the direction. The current sort column is marked with an arrow. The whole filtered list is sorted, not only the current page.
+- **Sorting.** Clicking a column header sorts by that column (the first click sorts in descending order); another click reverses the direction. The current sort column is marked with an arrow. The whole filtered list is sorted, not only the current page. Rows whose value is unknown (for example **n/a**, or "—" for a standby lag) go to the end in either direction.
 - **Filter.** If there is a **Filter…** field above the table, it keeps the rows that contain the entered text, case-insensitively. Which fields the filter searches depends on the table (for example, on the **Queries** page it searches the query text, the user and the database).
 - **Additional filters.** Drop-downs and checkboxes next to the filter field (database, user, state and so on) narrow the list by a specific attribute.
 - **Row counter.** If the table has a filter above it, the number of rows after filtering is shown to its right.
@@ -168,6 +180,14 @@ Texts produced by the pgscope server also come in the interface language: diagno
 
 The language of notifications (email, webhooks and other channels) is set separately for each channel — see [Notification channels](notifications.md). Sharing and invitation emails are sent in the language of the user who grants access.
 
+## Time zone {#time-zone}
+
+Dates and times in the interface — in tables, report navigation, the alert history and on charts — are shown in one time zone. By default it is the browser's zone. Another zone is chosen on the profile page, in the **Time zone** card (see [Time zone](teams.md#time-zone)). The choice applies at once, without a reload, is saved to your profile and applies on any device after sign-in. Before sign-in the browser's zone is used.
+
+The zone changes only how times are shown and how the **Date and time** field in the **Go to a moment** dialog is read: the chart range and the report age do not depend on it. The moment in a link (`?at=`) is in UTC, so the link opens the same report for a colleague in another zone. Date formats follow the [interface language](#language).
+
+A few texts composed by the pgscope server do not depend on the zone and give times in UTC, marked as such: entry times in the **Deadlocks in logs** item on the **Health issues** tab of the **Diagnostics** page (see [Locks](checks.md#diag-locks)) and the start time in the **Server restart** change in the change history (see [Change alerts](change-alerts.md#change-types)). The AI chat gets the report and server start times in UTC and may give them in UTC in its answers. The texts of alert notifications do not depend on the zone either.
+
 ## Color theme {#theme}
 
 pgscope supports light and dark themes. On first visit the theme follows the operating system setting. The **Dark theme** / **Light theme** button at the bottom of the side menu (and the moon or sun button in the documentation header) switches the theme; the choice is remembered in the browser, not in the profile, so you need to choose it again on another device or browser. Charts are redrawn in the colors of the selected theme.
@@ -188,15 +208,16 @@ The address of every page is kept in the URL fragment after `#`, so you can copy
 | `#/s/<id>/databases/<database>` | a database page |
 | `#/s/<id>/tables/<database>/<schema>/<table>` | a table page |
 | `#/s/<id>/indexes/<database>/<schema>/<index>` | an index page |
+| `#/s/<id>/<section>?at=<time>` | any server page as of `<time>`: UTC in ISO 8601, for example `2026-10-27T00:12:57Z`; Unix time in seconds is accepted too. The nearest report at or before that moment opens; a time in the future or an invalid value means the latest report |
 | `#/docs/<page>/<section>` | a documentation section |
 
 Example: `http://monitor:8080/#/s/3/locks` opens the **Locks** page of the server with ID 3.
 
 What to keep in mind about links:
 
-- The recipient must have access to the server (be its owner or a team member, see [Team, profile and account](teams.md)). Otherwise they see **Server not found**, or an endless loading indicator if they have no servers at all.
-- If the recipient is not signed in, the sign-in page opens; after sign-in pgscope opens the server list, and the link has to be opened again.
-- The selected past report and the chart range are not part of the link: a link always opens the latest data. To show a colleague the moment of an incident, tell them the report time, and they can pick it in the report list.
+- The recipient must have access to the server (be its owner or a team member, see [Team, profile and account](teams.md)). Otherwise they see **Server not found**, also when they have no servers at all. If the server list fails to load, the error is shown instead.
+- If the recipient is not signed in, the sign-in page opens; after sign-in the same link opens.
+- The selected past moment is part of the link (`?at=`), the chart range is not: it comes from the recipient's browser. To show a colleague the moment of an incident, send the **Link to this report** from the **Go to a moment** dialog.
 
 ## Documentation and help {#docs}
 

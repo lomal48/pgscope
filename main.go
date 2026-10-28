@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	_ "time/tzdata" // PUT /api/me/tz validates zone names also where the host has no zone database (Alpine image)
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -124,6 +125,7 @@ func routes(mux *http.ServeMux) {
 	mux.Handle("POST /api/me/apikey", authed(regenAPIKey))
 	mux.Handle("POST /api/me/password", authed(changePassword))
 	mux.Handle("PUT /api/me/lang", authed(setLang))
+	mux.Handle("PUT /api/me/tz", authed(setTZ))
 	mux.Handle("DELETE /api/me", authed(deleteMe))
 	mux.Handle("GET /api/servers", authed(listServers))
 	mux.Handle("GET /api/agents", authed(listAgents))

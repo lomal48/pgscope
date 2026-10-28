@@ -269,13 +269,13 @@ func diagnose(m *pgmetrics.Model, lang string) []issue {
 	// indexes
 	var unused, bloatIdx []string
 	type defIdx struct {
-		name       string
-		rank       int  // which index of a duplicate group to keep: 0 primary key, 1 unique or constraint, 2 plain
-		constraint bool // named like a constraint's index, which DROP INDEX cannot remove
+		name               string
+		unique, constraint bool // constraint: named like a constraint's index, which DROP INDEX cannot remove
+		rank               int  // which index of a duplicate group to keep: 0 primary key, 1 unique, 2 constraint, 3 plain
 	}
 	defs := map[string][]defIdx{}
 	rxName := regexp.MustCompile(`^CREATE (UNIQUE )?INDEX (CONCURRENTLY )?\S+ ON `)
-	rxConstraint := regexp.MustCompile(`_(pkey|key|excl)$`) // PostgreSQL's default constraint index names
+	rxKey := regexp.MustCompile(`_(pkey|key)$`) // default index names of primary key / unique constraints
 	for _, i := range m.Indexes {
 		iname := i.DBName + "." + i.SchemaName + "." + i.Name
 		if i.IdxScan == 0 && !strings.Contains(i.Definition, "UNIQUE") && i.Size > 1<<20 {
@@ -286,25 +286,30 @@ func diagnose(m *pgmetrics.Model, lang string) []issue {
 		}
 		if i.Definition != "" {
 			k := i.DBName + "|" + rxName.ReplaceAllString(i.Definition, "")
-			x := defIdx{name: iname, rank: 2, constraint: rxConstraint.MatchString(i.Name)}
-			if strings.HasSuffix(i.Name, "_pkey") {
+			// a primary key or unique constraint has a UNIQUE index, an exclusion constraint a non-unique one
+			uniq := strings.HasPrefix(i.Definition, "CREATE UNIQUE ")
+			x := defIdx{name: iname, unique: uniq, rank: 3, constraint: uniq && rxKey.MatchString(i.Name) || !uniq && strings.HasSuffix(i.Name, "_excl")}
+			switch {
+			case uniq && strings.HasSuffix(i.Name, "_pkey"):
 				x.rank = 0
-			} else if x.constraint || strings.HasPrefix(i.Definition, "CREATE UNIQUE ") {
+			case uniq:
 				x.rank = 1
+			case x.constraint:
+				x.rank = 2
 			}
 			defs[k] = append(defs[k], x)
 		}
 	}
 	// equal definitions ignoring UNIQUE. pgmetrics reports no constraints: primary keys and unique
 	// constraints have a UNIQUE index, and the default names above mark the rest. Keep the primary
-	// key, else a unique or constraint index; while a plain equivalent exists propose dropping only
-	// plain ones, and never a constraint's index (the same rule as the Duplicates tab, Objects.tsx)
+	// key, else a unique index, else a constraint's; never propose a constraint's index, nor a unique
+	// one while a non-unique equivalent exists (the same rule as the Duplicates tab, Objects.tsx)
 	var dups []string
 	for _, g := range defs {
 		slices.SortStableFunc(g, func(a, b defIdx) int { return a.rank - b.rank })
-		plain := slices.ContainsFunc(g[1:], func(x defIdx) bool { return x.rank == 2 })
+		nonUnique := slices.ContainsFunc(g, func(x defIdx) bool { return !x.unique })
 		for _, x := range g[1:] {
-			if plain && x.rank == 2 || !plain && !x.constraint {
+			if !x.constraint && !(nonUnique && x.unique) {
 				dups = append(dups, trf(lang, "%s повторяет %s", x.name, g[0].name))
 			}
 		}

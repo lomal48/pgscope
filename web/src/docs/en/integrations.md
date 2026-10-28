@@ -66,11 +66,8 @@ For Azure only Azure Monitor metrics are collected; the PostgreSQL log is not re
 
 - The subtitle is "AWS CloudWatch" or "Azure Monitor · resource name (region)".
 - The cards show the first 12 metrics of the report with their current values.
-- **Over time** has one chart per metric under its original name (for example, `CPUUtilization`, `FreeableMemory`, `FreeStorageSpace`, `ReadIOPS`, `WriteIOPS`, `DatabaseConnections` for AWS). pgscope derives the unit from the metric name, case-insensitively, applying the rules in order: names with `Bytes`, `Memory`, `Storage` or `Space` are shown in bytes (in bytes per second if the name also has `Throughput` or `PerSecond`); otherwise names with `Percent` or `Utilization` in percent; otherwise names with `Latency` in seconds; everything else as plain numbers. The cards format only bytes and percentages; other values are shown as plain numbers.
+- **Over time** has one chart per metric under its original name (for example, `CPUUtilization`, `FreeableMemory`, `FreeStorageSpace`, `ReadIOPS`, `WriteIOPS`, `DatabaseConnections` for AWS). pgscope derives the unit from the metric name, applying the rules in order (the first match wins): `percent`, `Utilization`, `HitRatio`, `%` and `BurstBalance` are percentages; `Aurora…Lag` and `CommitLatency` are milliseconds; `Latency`, `ReplicaLag`, `CheckpointLag`, `_in_seconds` and `Uptime` are seconds; `CommitThroughput` is operations per second; other `Throughput` names and `LogsGeneration` are bytes per second; `IOPS` is a count; `Bytes`, `Memory`, `Storage`, `Space`, `Swap`, `DiskUsage` and `SlotLag` are bytes; everything else is a count. For example, Azure's `memory_percent` and `storage_percent` are shown as percentages, `ReadThroughput` in bytes per second, `AuroraReplicaLag` in milliseconds, `SwapUsage` and `OldestReplicationSlotLag` in bytes. The cards use the same units as the charts.
 - **Enhanced Monitoring** — the latest Enhanced Monitoring entry as raw JSON, if it is enabled for the RDS instance.
-
-> [!WARNING]
-> Because of the rule order, metrics whose names contain both `memory` or `storage` and `percent` are shown as bytes rather than percent: for example, Azure's `memory_percent`, `storage_percent` and `serverlog_storage_percent`. The value itself is correct, only the unit is wrong: read it as a percentage. AWS metrics whose unit does not follow from the name (for example, `ReadThroughput`, `WriteThroughput`, `SwapUsage`) are shown as numbers in their original CloudWatch units.
 
 If you open the page for a server without cloud metrics, it shows **No cloud metrics** with a hint about the pgmetrics flags.
 
@@ -87,13 +84,13 @@ pgmetrics -w -f json -h PGB_HOST -p 6432 -U pgb_stats pgbouncer \
   | pgdash -a APIKEY --base-url=https://pgscope.example.com/api/v1 report-pgbouncer prod-db-1 pgb-1
 ```
 
-Here `prod-db-1` is the PostgreSQL server name in pgscope and `pgb-1` is the PgBouncer instance name. Both names may contain Latin letters, digits, `_`, `.`, `-`, up to 64 characters. If no server with that name exists yet, it is created. The report rate limit (`PGSCOPE_MIN_REPORT_INTERVAL`) is counted separately for each PgBouncer instance, so a pooler report can be sent right after the PostgreSQL report. A report without PgBouncer data is rejected with code 400 ("The report has no PgBouncer data"); other responses are the same as for regular reports (see [Sending reports](collect.md#responses)).
+Here `prod-db-1` is the PostgreSQL server name in pgscope and `pgb-1` is the PgBouncer instance name. Both names may contain Latin letters, digits, `_`, `.`, `-`, up to 64 characters. If no server with that name exists yet, it is created. The report rate limit (`PGSCOPE_MIN_REPORT_INTERVAL`) is counted separately for each PgBouncer instance, so a pooler report can be sent right after the PostgreSQL report. A report without PgBouncer data is rejected with code 400 ("The report has no PgBouncer data"); other responses are the same as for regular reports, including 413 for a report larger than `PGSCOPE_MAX_REPORT_MB` (see [Sending reports](collect.md#responses)).
 
 In Docker and Docker Swarm, the pgscope agent can send PgBouncer reports: besides the label the agent uses to find containers (`pgscope.enable=true` by default), the pooler container needs the labels `pgscope.kind=pgbouncer` and `pgscope.server` with the PostgreSQL server name (see [Docker and Docker Swarm](docker.md#labels)).
 
 ### What the page shows {#pgbouncer-page}
 
-The **PgBouncer** page always shows the latest report of the selected instance (subtitle "Report from …"), even if a past server report is selected in the server bar; the charts cover the selected period. If there are several instances, the switcher is at the top right.
+The **PgBouncer** page shows the latest report of the selected instance, and when a past moment is selected in the server bar, its report at or before that moment (the report time is in the subtitle "Report from …"; if there is no PgBouncer report up to that moment, the page shows **No PgBouncer report at this moment**). The **‹** and **›** buttons step through the main server's reports; the charts cover the selected period, and clicking them selects a moment. If there are several instances, the switcher is at the top right.
 
 Cards (from `SHOW CLIENTS` and `SHOW SERVERS`):
 
@@ -110,10 +107,7 @@ The **Connections over time** block: the **Client connections** chart (active, w
 
 The **Databases** block (`SHOW DATABASES`): **Name**, **Target server** (`host:port/database`, `local` means a Unix socket), **User (force_user)**, **Connections** (current and maximum) and **State** — **running**, **paused** (`PAUSE`) or **disabled** (`DISABLE`).
 
-The **Traffic by database** block (`SHOW STATS`): **Database**, **Transactions**, **Queries**, **Avg query time**, **Avg wait**, **Received**, **Sent**. The counters are cumulative since PgBouncer started. For the database chosen in the selector on the right, the page shows the "Transactions & queries · …" (per hour) and "Network · …" (bytes per second) charts.
-
-> [!WARNING]
-> In the current version the **Avg query time** and **Avg wait** columns show values a million times too small: pgmetrics sends the averages in seconds, while the interface converts them as microseconds. Until this is fixed, check the average times with `SHOW STATS` in the PgBouncer console.
+The **Traffic by database** block (`SHOW STATS`): **Database**, **Transactions**, **Queries**, **Avg query time**, **Avg wait**, **Received**, **Sent**. **Avg query time** and **Avg wait** are `avg_query_time` and `avg_wait_time` from `SHOW STATS`. The counters are cumulative since PgBouncer started. For the database chosen in the selector on the right, the page shows the "Transactions & queries · …" (per hour) and "Network · …" (bytes per second) charts.
 
 The **Pools** block (`SHOW POOLS`): **Pool** (`database/user`), **Mode** (`session`, `transaction`, `statement`), **Active clients**, **Waiting clients** (highlighted), **Active servers**, **Idle servers**, **Used servers**, **Max wait**. For the pool chosen in the selector on the right, the page shows the "Connections · …" and "Client wait · …" charts.
 

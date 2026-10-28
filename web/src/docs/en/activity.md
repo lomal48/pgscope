@@ -23,16 +23,16 @@ Some metrics appear only with additional PostgreSQL settings:
 | block read and write time | `track_io_timing = on` |
 | planning time and number of plans | `pg_stat_statements.track_planning = on` |
 | JIT metrics | PostgreSQL 15 or later |
-| execution plans | `auto_explain` with `auto_explain.log_format = json` and pgmetrics access to the PostgreSQL log (see [Execution plans](#plans)) |
+| execution plans | `auto_explain` with `auto_explain.log_format = json` and pgmetrics access to the PostgreSQL log: the log in `stderr` or `csvlog` format (PostgreSQL 13+ `csvlog` only with [pgmetrics built by pgscope](collect.md#pgmetrics-build)), pgmetrics running on the database host with a local connection (`--aws-rds-dbid` for RDS / Aurora), see [Execution plans](#plans) |
 
 ### Query list {#queries-list}
 
-The header shows the number of queries in the report and their total execution time. Above the table there is a database picker (**All databases** or a specific one) and a **Filter…** field that searches the query text, the user and the database. By default the table is sorted by total time.
+The header shows the number of distinct queries in the report (the rows of one query from different users count as one query) and their total execution time. Above the table there is a database picker (**All databases** or a specific one) and a **Filter…** field that searches the query text, the user and the database. By default the table is sorted by total time.
 
 | Column | What it shows |
 |---|---|
 | **Query** | the normalized query text; the table cuts it to two lines, the full text is on the query page |
-| **Database**, **User** | where and as whom the query ran |
+| **Database**, **User** | where and as whom the query ran; if several users ran the query in that database, they are listed separated by commas |
 | **Calls** | number of executions |
 | **Total time** | total execution time; the bar shows the query's share of the total time of all collected queries |
 | **Mean** | total time / calls |
@@ -51,7 +51,7 @@ How to use it:
 Clicking a row opens the query page.
 
 > [!NOTE]
-> If several users run the same query in the same database, the list has several rows with the same text. The query page is identified by the database and the query ID, so its cards and statistics refer to the first of those rows in the report, and its charts to one of them (not necessarily the same one).
+> `pg_stat_statements` keeps a separate row for each user who ran a query. pgscope merges the rows of one query in one database (with the same `queryid`): calls, time, rows, blocks and the other counters are summed, **Max** and the minimum time are taken over all users, the standard deviation covers all executions, and **Mean** is total time / calls. The cards and charts of the query page and the **Query**-level alert rules use the same numbers (see [Query](alerts.md#metrics-query)). Rows of dropped databases come without a database name, so the same query from several dropped databases is merged into one as well.
 
 ### Query page {#query-detail}
 
@@ -59,8 +59,9 @@ The page address is `#/s/<id>/queries/<database>/<queryid>`. If the query is not
 
 The page contains:
 
+- below the title, the users and the database as `user@database` (several users separated by commas);
 - the full query text (within `--sql-length`) with a **Copy** button;
-- cards: **Calls**, **Total time**, **Mean time**, **Max time** (with the minimum time below it), **Rows** (with rows per call), **Cache hit ratio**;
+- cards: **Calls**, **Total time**, **Mean time**, **Max time** (with the minimum time below it), **Rows** (with rows per call), **Cache hit ratio**, each covering all users of the query;
 - a **Suggestions** card — automatic recommendations (see [Query suggestions](#query-suggestions));
 - the **Over time** section — charts for this query (see [Query charts](#query-charts));
 - the **Statistics** section — all remaining `pg_stat_statements` fields: time standard deviation, shared blocks (hit, read, dirtied, written), local and temp blocks, block read and write time, number of plans and planning time, WAL records, full-page images, WAL bytes, JIT functions and JIT generation time, query ID;
@@ -112,7 +113,7 @@ auto_explain.log_timing = off          # on gives per-node time, at a higher ove
 auto_explain.log_format = json
 ```
 
-2. Give pgmetrics access to the log. pgmetrics reads the log only when it runs on the database host (connecting through a Unix socket or a local address); the `--log-file` and `--log-dir` flags tell it where the log is if it does not find it by itself. For AWS RDS / Aurora the log is read through the API with the `--aws-rds-dbid` flag. Only entries from the last few minutes are taken from the log: 5 by default, set by the `--log-span` flag (see [Sending reports](collect.md)).
+2. Give pgmetrics access to the log. pgmetrics reads the log only when it runs on the database host and connects locally (through a Unix socket or 127.0.0.1); the `--log-file` and `--log-dir` flags only tell it where the log is and do not replace a local connection. For AWS RDS / Aurora the log is read through the API with the `--aws-rds-dbid` flag. The log is written in `stderr` format (`log_destination = 'stderr'`) with a timestamp in `log_line_prefix`, for example `'%m [%p] %q%u@%d '`, or in `csvlog` format. PostgreSQL 13+ `csvlog` is read only by [pgmetrics built by pgscope](collect.md#pgmetrics-build); official releases skip such files (details in [Logs](server.md#logs)). Only entries from the last few minutes are taken from the log: 5 by default, set by the `--log-span` flag (see [Sending reports](collect.md)).
 
 Without plans the section shows **No execution plans captured** with the same hints.
 

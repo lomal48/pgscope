@@ -275,3 +275,42 @@ func TestMailShareLogs(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+// PUT /api/me/tz saves a known IANA zone for GET /api/me, refuses unknown names, and "" goes back to the browser's zone
+func TestSetTZ(t *testing.T) {
+	authDB(t)
+	h := testMux()
+	defer func(s string) { cfg.Signup = s }(cfg.Signup)
+	cfg.Signup = "open"
+	s := sessionOf(t, call(h, "POST", "/api/signup", `{"email":"a@x","password":"password1"}`, nil))
+	tz := func() *string {
+		var me struct {
+			TZ *string `json:"tz"`
+		}
+		if w := call(h, "GET", "/api/me", "", s); w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &me) != nil {
+			t.Fatalf("GET /api/me: %d %s", w.Code, w.Body)
+		}
+		return me.TZ
+	}
+	if z := tz(); z != nil {
+		t.Fatalf("new account tz = %q, want null", *z)
+	}
+	if w := call(h, "PUT", "/api/me/tz", `{"tz":"Europe/Moscow"}`, s); w.Code != 200 {
+		t.Fatalf("PUT Europe/Moscow: %d %s", w.Code, w.Body)
+	}
+	for _, bad := range []string{"Mars/Olympus", "Local", "../../etc/passwd", "/etc/localtime"} {
+		w := call(h, "PUT", "/api/me/tz", `{"tz":"`+bad+`"}`, s)
+		if w.Code != 400 || !strings.Contains(w.Body.String(), "Неизвестный часовой пояс") {
+			t.Errorf("PUT %q: %d %s", bad, w.Code, w.Body)
+		}
+	}
+	if z := tz(); z == nil || *z != "Europe/Moscow" {
+		t.Fatalf("tz after refused changes = %v, want Europe/Moscow", z)
+	}
+	if w := call(h, "PUT", "/api/me/tz", `{"tz":""}`, s); w.Code != 200 {
+		t.Fatalf("PUT \"\": %d %s", w.Code, w.Body)
+	}
+	if z := tz(); z != nil {
+		t.Fatalf("tz after reset = %q, want null", *z)
+	}
+}

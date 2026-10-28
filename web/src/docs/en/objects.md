@@ -157,7 +157,7 @@ The **Unused** tab shows non-unique indexes that were not scanned during the cho
 | **since stats reset** | `idx_scan = 0` in the selected report |
 | **in the last day**, **in the last 7 days**, **in the last 30 days**, **in the last 90 days** | `idx_scan` in the selected report equals the value from the first stored report received no earlier than the start of the period |
 
-Unlike the **Unused indexes** check on the **Diagnostics** page, which takes only indexes larger than 1 MiB, the tab does not filter indexes by size. The start of the period is counted from the current moment, not from the report selected in the server bar.
+Unlike the **Unused indexes** check on the **Diagnostics** page, which takes only indexes larger than 1 MiB, the tab does not filter indexes by size. The start of the period is counted from the displayed report: when a past moment is selected in the server bar, from the time of that report.
 
 In the "last N days" mode the page shows "compared with the report from …" — the date of the report used for the comparison. Check it: if the server's history is shorter than the chosen period, the comparison uses the earliest stored report, and "90 days" may actually mean a few days. History is limited by the time-series retention `PGSCOPE_METRICS_RETENTION_DAYS` (90 days by default, see [Data storage](data.md#retention)).
 
@@ -174,7 +174,7 @@ DROP INDEX CONCURRENTLY "public"."orders_status_idx";
 > - Usage statistics are per server. An index unused on the primary may serve queries on standbys. Standbys appear in pgscope as separate servers — check the index in their reports.
 > - `pg_stat_reset()` and a crash restart of PostgreSQL zero the counters. The **since stats reset** mode then lists indexes that simply have not had time to be used since the reset; check **Stats reset** on the database page. In the "last N days" mode, an index whose counter dropped below the baseline after a reset is, on the contrary, not listed.
 > - An index that was not in the report at the start of the period (created later) is not shown in the "last N days" mode.
-> - Only indexes whose definition contains `UNIQUE` (including primary keys) are excluded from the list. Indexes that enforce exclusion constraints (`EXCLUDE`) are not excluded. If pgmetrics runs with `--omit=indexdefs`, there are no definitions, and unique indexes get listed too.
+> - Only indexes whose definition contains `UNIQUE` (including primary keys) are excluded from the list. Indexes that enforce exclusion constraints (`EXCLUDE`) are not excluded, although PostgreSQL will refuse to drop them. If pgmetrics runs with `--omit=indexdefs`, there are no definitions, and unique indexes get listed too.
 > - Rare but important queries (monthly reports, emergency procedures) may fall outside the chosen period.
 
 ### Bloated indexes {#bloated-indexes}
@@ -190,15 +190,20 @@ The estimate is approximate. Rebuilding makes sense for indexes with a noticeabl
 
 ### Duplicates {#duplicate-indexes}
 
-The **Duplicates** tab finds indexes in the same database with the same definition: the index name and the word `UNIQUE` are removed from `CREATE [UNIQUE] INDEX name ON …`, and the rest (table, method, columns, `INCLUDE`, `WHERE` condition) must match exactly. In each group the first index (in report order) is treated as the primary one; the others are listed with the columns **Duplicate of** (the name of the primary index) and **Definition**. For the selected ones it generates:
+The **Duplicates** tab finds indexes in the same database with the same definition: the index name and the word `UNIQUE` are removed from `CREATE [UNIQUE] INDEX name ON …`, and the rest (table, method, columns, `INCLUDE`, `WHERE` condition) must match exactly. In each group pgscope picks the index to keep: the primary key's index (a unique index named `*_pkey`), else another unique index, else an exclusion constraint's index (a non-unique index named `*_excl`), else a regular index; among equals, the first one in report order. The other indexes of the group are listed with the columns **Duplicate of** (the name of the index to keep) and **Definition**. The list never includes:
+
+- indexes that back a constraint: unique ones named `*_pkey` or `*_key` and non-unique ones named `*_excl` — PostgreSQL refuses to drop them with `DROP INDEX`;
+- unique indexes while the group has a non-unique one: the regular index is dropped and the uniqueness guarantee stays.
+
+For the selected ones it generates:
 
 ```sql
 \c "shop"
 DROP INDEX CONCURRENTLY "public"."orders_customer_id_idx1";  -- duplicate of orders_customer_id_idx
 ```
 
-> [!WARNING]
-> Because `UNIQUE` is ignored in the comparison, a unique index and a regular index on the same columns count as duplicates, and whichever comes first in the report becomes the "primary" one. Before dropping, make sure no unique index ended up in the drop list: dropping a standalone `CREATE UNIQUE INDEX` removes the uniqueness guarantee, and PostgreSQL refuses to drop an index that backs a `PRIMARY KEY` or `UNIQUE` constraint. Indexes that match only partially (for example, `(a)` and `(a, b)`) are not considered duplicates.
+> [!NOTE]
+> pgmetrics reports no constraints, so pgscope recognizes constraint indexes only by the names PostgreSQL gives them by default: `table_pkey`, `table_columns_key`, `table_columns_excl`. A constraint's index with another name counts as a regular one — if PostgreSQL refuses to drop it, keep it. A standalone unique index and a `UNIQUE` constraint's index (`*_key`) on the same columns rank equally: the one that comes first in the report is kept, and if that is the standalone index, the tab proposes nothing, although you can drop it by hand. Indexes that match only partially (for example, `(a)` and `(a, b)`) are not considered duplicates. The **Duplicate indexes** check on the **Diagnostics** page follows the same rules.
 
 ### Running the generated SQL {#running-sql}
 
@@ -227,7 +232,7 @@ Details:
 
 - If the server's history is shorter than the period, the comparison uses the earliest stored report — check the date in the caption.
 - Objects that were not in the report at the start of the period (created later) do not appear in the growth ranking.
-- The start of the period is counted from the current moment, not from the report selected in the server bar.
+- The start of the period is counted from the displayed report: when a past moment is selected in the server bar, from the time of that report.
 - Without suitable history the page shows **Nothing to rank** with the explanation **Not enough history for this period yet.**
 
 Size growth is the main tool for finding out where the disk space is going: combine it with [Tablespaces](#tablespaces) and [WAL and checkpoints](server.md#wal).

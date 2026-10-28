@@ -5,10 +5,11 @@ import {
   SlidersHorizontal, Stethoscope, Sun, Table2, Trophy, User, Users, Wrench, X, Zap,
 } from 'lucide-react'
 import { api } from '../lib/api'
-import { go, usePath } from '../lib/router'
+import { atOf, go, usePath, withAt } from '../lib/router'
 import { RANGES, useApp, useSrv } from '../lib/server'
-import { fmtAgo, fmtTime, now } from '../lib/format'
+import { fmtAgo, fmtDur, fmtTime, now } from '../lib/format'
 import { LANGS, setLang, t, useLang } from '../lib/i18n'
+import { ReportNav } from './ReportNav'
 import { cx } from './ui'
 
 type NavItem = [path: string, label: string, icon: ReactNode]
@@ -107,7 +108,8 @@ export function Logo() {
 }
 
 export function Shell({ children, serverId }: { children: ReactNode; serverId?: number }) {
-  const path = usePath().split('?')[0]
+  const full = usePath()
+  const path = full.split('?')[0]
   const { me, servers } = useApp()
   const [dark, toggle] = useTheme()
   const [open, setOpen] = useState(false)
@@ -132,7 +134,7 @@ export function Shell({ children, serverId }: { children: ReactNode; serverId?: 
           <>
             <div className="pt-4 pb-1 px-1">
               <div className="relative">
-                <select className="input w-full pr-8 appearance-none font-medium" value={srv.id} onChange={e => go(`/s/${e.target.value}`)}>
+                <select className="input w-full pr-8 appearance-none font-medium" value={srv.id} onChange={e => go(withAt(`/s/${e.target.value}`, atOf(full)))}>
                   {servers.map(s => <option key={s.id} value={s.id}>{s.name}{s.kind === 'pgpool' ? ' (pgpool)' : ''}</option>)}
                 </select>
                 <ChevronDown className="size-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-faint" />
@@ -196,28 +198,23 @@ const HELP: Record<string, string> = {
 
 export function ServerBar() {
   const sub = usePath().split('?')[0].split('/')[3] ?? ''
-  const { srv, reportAt, pinnedAt, setPinnedAt, range, setRange, refresh, id } = useSrv()
-  const [times, setTimes] = useState<number[]>([])
-  useEffect(() => {
-    api<number[]>(`/servers/${id}/reports?from=${now() - 30 * 86400}`).then(setTimes, () => {})
-  }, [id, reportAt])
-  const stale = reportAt && now() - reportAt > 15 * 60
+  const { srv, reportAt, pinnedAt, loading, range, setRange, refresh } = useSrv()
+  // freshness is the server's liveness (its latest report), not the age of the report shown
+  const last = Math.max(srv.last_report ? Date.parse(srv.last_report) / 1000 : 0, pinnedAt ? 0 : reportAt ?? 0) || null
+  const stale = !!last && now() - last > 15 * 60
   return (
-    <div className="sticky top-0 z-30 bg-bg/85 backdrop-blur border-b border-line">
-      <div className="flex flex-wrap items-center gap-2 px-6 h-14">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          <span className={cx('size-2 rounded-full shrink-0', stale ? 'bg-warn' : 'bg-good')} />
+    <div className={cx('sticky top-0 z-30 bg-bg/85 backdrop-blur border-b border-line', !!pinnedAt && 'shadow-[inset_0_2px_0_var(--accent)]')}>
+      <div className="flex flex-wrap items-center gap-2 px-6 min-h-14 py-2">
+        <div className="flex items-center gap-2 min-w-40 flex-1">
+          <span className={cx('size-2 rounded-full shrink-0', !last ? 'bg-faint' : stale ? 'bg-warn' : 'bg-good')} />
           <span className="font-semibold truncate">{srv.name}</span>
-          {reportAt && (
-            <span className={cx('text-xs truncate', stale ? 'text-warn' : 'text-faint')} title={fmtTime(reportAt)}>
-              {t('отчёт {ago}', { ago: fmtAgo(reportAt) })}
+          {last && (
+            <span className={cx('text-xs truncate', stale ? 'text-warn' : 'text-faint')} title={fmtTime(last)}>
+              {pinnedAt ? t('последний отчёт {ago}', { ago: fmtAgo(last) }) : t('отчёт {ago}', { ago: fmtAgo(last) })}
             </span>
           )}
         </div>
-        <select className="input w-52" value={pinnedAt ?? ''} onChange={e => setPinnedAt(e.target.value ? Number(e.target.value) : null)} title={t('Показываемый отчёт')}>
-          <option value="">{t('Последний отчёт')}</option>
-          {times.map(t => <option key={t} value={t}>{fmtTime(t)}</option>)}
-        </select>
+        <ReportNav />
         <div className="flex rounded-lg border border-line bg-panel p-0.5" role="group" aria-label={t('Диапазон времени графиков')}>
           {RANGES.map(([r, l]) => (
             <button key={r} onClick={() => setRange(r)}
@@ -232,6 +229,11 @@ export function ServerBar() {
           <CircleHelp className="size-3.5" />
         </a>
       </div>
+      {pinnedAt && reportAt && !loading && pinnedAt - reportAt > 15 * 60 && (
+        <div role="status" className="px-6 py-1.5 text-xs text-warn bg-warn/10 border-t border-line">
+          {t('Отчёта на {asked} нет. Показан ближайший более ранний — от {time}, на {dur} раньше.', { asked: fmtTime(pinnedAt), time: fmtTime(reportAt), dur: fmtDur(pinnedAt - reportAt) })}
+        </div>
+      )}
     </div>
   )
 }

@@ -86,7 +86,7 @@ function useSubmit(fn: () => Promise<unknown>, onDone: () => void) {
 export function Login({ onDone }: { onDone: () => void }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const { err, busy, submit } = useSubmit(() => api('/login', 'POST', { email, password }), () => { go('/'); onDone() })
+  const { err, busy, submit } = useSubmit(() => api('/login', 'POST', { email, password }), onDone)
   const signupOpen = useSignupOpen()
   return (
     <AuthLayout>

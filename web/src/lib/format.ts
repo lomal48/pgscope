@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { lang, onLangChange, t } from './i18n'
 
 export { plural } from './i18n'
@@ -10,6 +11,42 @@ onLangChange(() => {
   LOCALE = localeFor()
   nf = new Intl.NumberFormat(LOCALE)
 })
+
+// time zone of every shown date and time (live binding): the one saved in the profile, else the browser's
+export const BROWSER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone
+export let TZ = BROWSER_TZ
+const tzListeners = new Set<() => void>()
+
+// knownTZ: whether this browser can show times in zone z (the server accepts names some browsers do not know)
+export function knownTZ(z: string) {
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: z })
+    return true
+  } catch {
+    return false
+  }
+}
+
+// setTZ switches the zone; null, '' or a name this browser does not know = the browser's zone
+export function setTZ(z: string | null | undefined) {
+  const next = z && knownTZ(z) ? z : BROWSER_TZ
+  if (next === TZ) return
+  TZ = next
+  tzListeners.forEach(f => f())
+}
+
+// re-render the calling component (use it at the root) when the time zone changes
+export function useTZ(): string {
+  const [, force] = useState(0)
+  useEffect(() => {
+    const f = () => force(x => x + 1)
+    tzListeners.add(f)
+    return () => {
+      tzListeners.delete(f)
+    }
+  }, [])
+  return TZ
+}
 
 const units = () => [t('Б'), t('КиБ'), t('МиБ'), t('ГиБ'), t('ТиБ'), t('ПиБ')]
 
@@ -78,14 +115,17 @@ export function fmtAgo(ts: number | null | undefined, ref = now()): string {
   return t('{ago} назад', { ago: durParts(d)[0] })
 }
 
+// fmtDate formats a unix time in TZ; every date and time in the UI goes through it
+export const fmtDate = (ts: number, o: Intl.DateTimeFormatOptions) => new Date(ts * 1000).toLocaleString(LOCALE, { ...o, timeZone: TZ })
+
 export function fmtTime(ts: number | null | undefined): string {
   if (!ts) return '—'
-  return new Date(ts * 1000).toLocaleString(LOCALE, { dateStyle: 'medium', timeStyle: 'short' })
+  return fmtDate(ts, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-export function fmtTimeShort(ts: number): string {
-  return new Date(ts * 1000).toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit' })
-}
+// fmtShort: day, month and time; the year only when it is not the current one (in TZ)
+export const fmtShort = (ts: number) => fmtDate(ts, fmtDate(ts, { year: 'numeric' }) === fmtDate(now(), { year: 'numeric' })
+  ? { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' } : { dateStyle: 'medium', timeStyle: 'short' })
 
 // memory settings are reported in units of 8kB pages, kB, or MB
 const SETTING_UNIT: Record<string, number> = {

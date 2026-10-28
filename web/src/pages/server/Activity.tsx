@@ -25,7 +25,7 @@ const hitPct = (q: any) => pct(q.shared_blks_hit, q.shared_blks_hit + q.shared_b
 // min/max taken over the rows that ran, stddev pooled; means stay total/count
 function mergeStatements(rows: any[]): any {
   if (rows.length === 1) return rows[0]
-  const out: any = { ...rows[0], user: [...new Set(rows.map(r => r.user))].join(', ') }
+  const out: any = { ...rows[0], user: [...new Set(rows.map(r => r.user).filter(Boolean))].join(', ') } // user may be empty (dropped role)
   for (const k of new Set(rows.flatMap(Object.keys))) { // zero counters may be omitted from a row
     if (rows.some(r => typeof r[k] === 'number') && !/oid$|^(min|max|stddev)_|_since$/.test(k)) out[k] = rows.reduce((a, r) => a + (r[k] ?? 0), 0)
   }
@@ -186,8 +186,8 @@ export function QueryDetail({ db, qid }: { db: string; qid: string }) {
       <Section title={t('Планы выполнения ({n})', { n: plans.length })}>
         {plans.length === 0 ? (
           <Card><Empty title={t('Планы выполнения не собраны')}>
-            {withCode(t('Планы берутся из вывода {ae} в журнале PostgreSQL (задайте {format}). pgmetrics читает журнал, только если запущен на хосте базы данных и подключается локально (через сокет или 127.0.0.1); {logfile} лишь указывает путь к файлу. Для AWS RDS / Aurora добавьте {rds}. Формат журнала — stderr ({dest}) с меткой времени в {prefix}: файлы csvlog PostgreSQL 13+ pgmetrics пропускает.'),
-              { ae: 'auto_explain', format: 'auto_explain.log_format = json', logfile: '--log-file', rds: '--aws-rds-dbid', dest: "log_destination = 'stderr'", prefix: "log_line_prefix = '%m [%p] %q%u@%d '" })}
+            {withCode(t('Планы берутся из вывода {ae} в журнале PostgreSQL (задайте {format}). pgmetrics читает журнал, только если запущен на хосте базы данных и подключается локально (через сокет или 127.0.0.1); {logfile} лишь указывает путь к файлу. Для AWS RDS / Aurora добавьте {rds}. Формат журнала — stderr ({dest}) с меткой времени в {prefix} или csvlog; csvlog PostgreSQL 13+ читает только pgmetrics, собранный pgscope ({build}), официальные выпуски его пропускают.'),
+              { ae: 'auto_explain', format: 'auto_explain.log_format = json', logfile: '--log-file', build: 'tools/build-pgmetrics.sh', rds: '--aws-rds-dbid', dest: "log_destination = 'stderr'", prefix: "log_line_prefix = '%m [%p] %q%u@%d '" })}
           </Empty></Card>
         ) : (
           <>

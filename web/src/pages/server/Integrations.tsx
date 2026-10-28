@@ -9,10 +9,10 @@ import { Badge, Card, Empty, ErrorBox, Loading, PageHeader, Section, Select, Sta
 import { t } from '../../lib/i18n'
 
 export function PgBouncer() {
-  const { srv, id, tick } = useSrv()
+  const { srv, id, tick, pinnedAt } = useSrv()
   const [picked, setName] = useState('')
   const name = srv.pgbouncers.includes(picked) ? picked : srv.pgbouncers[0] ?? ''
-  const { data, error } = useApi<any>(name ? `/servers/${id}/report?source=${encodeURIComponent(name)}&t=${tick}` : null)
+  const { data, error } = useApi<any>(name ? `/servers/${id}/report?source=${encodeURIComponent(name)}&at=${pinnedAt ?? ''}&t=${tick}` : null)
   const [db, setDb] = useState('')
   const [pool, setPool] = useState('')
   if (!name) {
@@ -29,7 +29,8 @@ export function PgBouncer() {
     <>
       <PageHeader title="PgBouncer" sub={data ? t('Отчёт от {time}', { time: fmtTime(data.meta?.at) }) : undefined}
         actions={srv.pgbouncers.length > 1 ? <Select className="w-48" value={name} onChange={setName} options={srv.pgbouncers} /> : <Badge tone="accent">{name}</Badge>} />
-      {error ? <ErrorBox error={error} /> : !p ? <Loading /> : (
+      {error?.status === 404 && pinnedAt ? <Card><Empty icon={<Cable className="size-8" />} title={t('Нет отчёта PgBouncer на этот момент')} /></Card>
+        : error ? <ErrorBox error={error} /> : !p ? <Loading /> : (
         <>
           <Stats>
             <Stat label={t('Активные клиентские соединения')} value={p.cc_active} />

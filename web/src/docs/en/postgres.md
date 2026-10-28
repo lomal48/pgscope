@@ -11,7 +11,7 @@ pgscope gets its data only from pgmetrics reports, so the interface shows exactl
 | **Block read time**, **Block write time**, the suggestion about the share of disk I/O | `track_io_timing = on` | [Statistics settings](#track-settings) |
 | **Plans**, **Total plan time**, the suggestion about long planning | `pg_stat_statements.track_planning = on` | [Statistics settings](#track-settings) |
 | **Execution plans** on the query page | `auto_explain` with `log_format = json` and log access for pgmetrics | [auto_explain](#auto-explain) |
-| **Logs**, **Deadlocks in logs** on the **Locks** page | log access for pgmetrics, a timestamp in `log_line_prefix` | [PostgreSQL log](#logs) |
+| **Logs**, **Deadlocks in logs** on the **Locks** page | log access for pgmetrics, for `stderr` a timestamp in `log_line_prefix` | [PostgreSQL log](#logs) |
 | **Autovacuum history (from logs)** on the **Vacuum** page | `log_autovacuum_min_duration` other than `-1` and log access | [PostgreSQL log](#logs) |
 | **Functions** under **Extensions & more** | `track_functions = pl` or `all` | [Statistics settings](#track-settings) |
 | **System**, the **Load average** and **Memory** charts on **Overview**, disk usage on **Tablespaces** | pgmetrics running on the database host under Linux | [Logs, plans and autovacuum history](collect.md#logs) |
@@ -114,7 +114,9 @@ Without `pg_stat_statements` the **Queries** page shows **No query statistics**,
 How pgmetrics reads the statistics:
 
 - The `pg_stat_statements` view returns the statements of all databases on the server, so pgmetrics reads it once per report, in the first collected database where the extension is installed. Strictly speaking, one such database is enough. Note that `--all-dbs` mode does not collect the `postgres` database, so having the extension only in `postgres` is not enough in that mode. Creating it in every monitored database is the safer choice.
-- The report includes the 100 statements with the largest total execution time (pgmetrics flag `--statements-limit`), and each text is cut to 500 characters (`--sql-length`).
+- The report includes the 100 `pg_stat_statements` rows with the largest total execution time (pgmetrics flag `--statements-limit`), and each query text is cut to 500 characters (`--sql-length`).
+- `pg_stat_statements` keeps a separate row for each user who ran a query. pgscope merges the rows with the same database and `queryid`: the **Queries** page, the query page, the charts and query-level alerts show the sum over all users, means are the total time divided by the total number of calls, and the maximum is taken over all users. Note that each such row takes a place in the `--statements-limit` budget.
+- Rows of databases dropped since the statistics were last reset arrive with an empty database name, and pgscope merges them by `queryid` into one query.
 
 Useful extension settings:
 
@@ -151,7 +153,7 @@ How the format affects what you see:
 Notes:
 
 - `log_analyze = on` provides the actual row counts that pgscope uses to spot planner misestimates. According to the PostgreSQL documentation, instrumentation then applies to all statements, not only those that get logged, so the overhead is always there. `log_timing = off` reduces it considerably. The bars under the nodes then show the share of cost, and the tree is headed by **bars show share of cost (no timing data)**. To reduce the load further, use `auto_explain.sample_rate`.
-- Plans are linked to a `pg_stat_statements` statement by query identifier or by text with literals, numbers and `$n` parameters replaced by `?`. The text in `pg_stat_statements` is cut to `--sql-length` (500 characters), so long statements do not match by text. For them, add `%Q` to `log_line_prefix` (PostgreSQL 14+, with `compute_query_id = auto` and `pg_stat_statements` loaded) so pgmetrics gets the query identifier, or raise `--sql-length`.
+- Plans are linked to a `pg_stat_statements` statement by query identifier or by text with literals, numbers and `$n` parameters replaced by `?`. The text in `pg_stat_statements` is cut to `--sql-length` (500 characters), so long statements do not match by text. For them, add `%Q` to `log_line_prefix` (PostgreSQL 14+, with `compute_query_id = auto` and `pg_stat_statements` loaded) so pgmetrics gets the query identifier, or raise `--sql-length`. In PostgreSQL 14+ `csvlog` the identifier is written to a separate column, and pgmetrics [built by pgscope](collect.md#pgmetrics-build) takes it from there without `%Q`.
 - Plans are read only from the log entries of the last `--log-span` minutes of each report. All conditions for reading the log are in [PostgreSQL log](#logs).
 
 ## PostgreSQL log {#logs}
@@ -165,21 +167,27 @@ From the log pgmetrics takes:
 
 pgmetrics reads the log only when all of these hold:
 
-1. **The connection is local.** pgmetrics connected through the Unix socket, with the same client and server address, or over loopback addresses `127.0.0.0/8`. In a remote run the log is not read, even with `--log-file` or `--log-dir`. The exception is AWS RDS and Aurora: there the log is read through the AWS API with the `--aws-rds-dbid` flag, see [AWS RDS and Aurora](collect.md#aws). The **(local)** mark in the **Collected by** row of the **Cluster** card on **Overview** shows that a report was collected locally.
+1. **The connection is local.** pgmetrics connected through the Unix socket, with the same client and server address, or over loopback addresses `127.0.0.0/8`. In a remote run the log is not read, even with `--log-file` or `--log-dir`. The exception is AWS RDS and Aurora: there the log is read through the AWS API with the `--aws-rds-dbid` flag, see [AWS RDS and Aurora](collect.md#aws). The **Collected by** row of the **Cluster** card on **Overview** shows the pgmetrics version, for example **pgmetrics 1.19.1 (local)**, and the **(local)** mark shows that the report was collected locally.
 2. **The file is found.** pgmetrics looks in this order: the `--log-file` flag; all files in the `--log-dir` directory except `.gz` and `.bz2`; the result of `pg_current_logfile()` (PostgreSQL 10+, only with `logging_collector = on`; an absolute path or one relative to `data_directory`), if the role may call this function; the most recent file in `/var/log/postgresql`. If the `--log-file` file cannot be read, pgmetrics prints `warning: failed to locate/read specified log file …` and tries no other place. If nothing is found, pgmetrics prints the warning `failed to guess log file location/access denied, specify explicitly with --log-file or --log-dir` to stderr, and the report goes out without log data.
-3. **The format is supported.** A plain text log (`stderr`) is read reliably. When `log_destination` contains `csvlog` and `logging_collector = on`, pgmetrics reads the CSV file, but it parses only the 23-column `csvlog` of PostgreSQL 12 and older. From PostgreSQL 13 on, `csvlog` has more columns, and pgmetrics silently skips such a file: the report has no log data and no warning. So on PostgreSQL 13+ keep `log_destination = 'stderr'`, without `csvlog`. pgmetrics does not read the `jsonlog` format.
-4. **`log_line_prefix` contains a timestamp**: `%t`, `%m` or `%n`. The default `'%m [%p] '` works. Without a timestamp the log is not read, and pgmetrics prints `no timestamp escape sequence was found in log_line_prefix`.
+3. **The format is supported.** pgmetrics reads a plain text log (`stderr`) and `csvlog`. It picks the format from the server settings, not from the file name: when `log_destination` contains `csvlog` and `logging_collector = on`, every file found is read as CSV (plain `.log` files from `--log-dir` are then skipped, sometimes with the warning `warning: while reading log file …`), otherwise as text. PostgreSQL 13+ `csvlog` is read only by the pgmetrics that pgscope builds (its version ends with `+pgscope`, see [pgmetrics built by pgscope](collect.md#pgmetrics-build)). Official pgmetrics releases parse only the 23-column `csvlog` of PostgreSQL 12; from PostgreSQL 13 on `csvlog` has more columns, and they silently skip such a file: the report has no log data and no warning. With official pgmetrics keep `log_destination = 'stderr'`, without `csvlog`. pgmetrics does not read the `jsonlog` format.
+4. **For `stderr`, `log_line_prefix` contains a timestamp**: `%t`, `%m` or `%n`. The default `'%m [%p] '` works. Without a timestamp the log is not read, and pgmetrics prints `no timestamp escape sequence was found in log_line_prefix`. In `csvlog` every record carries its time, and pgmetrics built by pgscope does not check `log_line_prefix` there; official releases require the timestamp for `csvlog` too.
 5. **The file is readable** by the OS user that runs pgmetrics. By default `log_file_mode = 0600`, and only the owner (usually `postgres`) can read the log. Either run the collection as `postgres`, or set `log_file_mode = 0640` and add the collector's user to the owner's group. In the second case the user also needs access to the log directory. By default `log_directory = 'log'` is inside the data directory, which has mode `0700`, so `log_file_mode = 0640` alone does not help. Move `log_directory` out of the data directory (for example, to `/var/log/postgresql`) or run the collection as `postgres`.
 
 Only the entries of the last `--log-span` minutes (5 by default) are read. Make this value equal to the report interval, or some entries end up in no report at all.
+
+> [!WARNING]
+> Official pgmetrics releases read entry times correctly only when `log_timezone` matches the time zone of the host where pgmetrics runs (`/etc/localtime` or the process's `TZ` variable), or is `'UTC'`. They read the time of an entry by its zone abbreviation (`MSK`, `CET`, `+05`) and understand only `UTC`, `GMT` and the abbreviations of their own local zone; they take all others as UTC. With a zone east of UTC (for example `MSK`) entry times move forward by the zone offset: the report gets the entries of `--log-span` minutes plus that offset, the times on the **Logs** page are shifted, and the same entries repeat in several reports in a row. With a zone west of UTC the times move back, the entries fall outside the `--log-span` window, and the report has no log data. This applies to the `%m` and `%t` timestamps of `stderr` and to `csvlog`; the `%n` timestamp (Unix time) does not depend on the zone.
+>
+> [pgmetrics built by pgscope](collect.md#pgmetrics-build) reads entry times in the zone named by the server's `log_timezone`, so they are right with any combination of the server's and the pgmetrics host's zones. If it does not know the zone name, it writes `warning: unknown log_timezone …` to stderr and reads times in the zone of its host.
 
 Recommended log settings:
 
 | Setting | Recommendation | What it gives in pgscope |
 |---|---|---|
 | `logging_collector` | `on` | log files that pgmetrics finds through `pg_current_logfile()` (restart required) |
-| `log_destination` | `'stderr'` | the format pgmetrics reads reliably; `csvlog` only up to PostgreSQL 12 |
-| `log_line_prefix` | `'%m [%p] %q%u@%d '` | the mandatory timestamp, plus user and database on the entries; add `%Q` to link plans to statements |
+| `log_destination` | `'stderr'` | the format every pgmetrics reads; PostgreSQL 13+ `'csvlog'` is read only by [pgscope's build](collect.md#pgmetrics-build) |
+| `log_line_prefix` | `'%m [%p] %q%u@%d '` | the timestamp (mandatory for `stderr`), plus user and database on the entries; add `%Q` to link plans to statements |
+| `log_timezone` | any with [pgscope's build](collect.md#pgmetrics-build); with official pgmetrics, the time zone of its host, or `'UTC'` | correct entry times, and entries inside the `--log-span` window |
 | `log_file_mode` | `0640` | reading the log as a user other than the owner |
 | `log_autovacuum_min_duration` | `1000` (ms) or `0` | **Autovacuum history (from logs)**. `-1` turns the logging off (the default up to PostgreSQL 14; from 15 on the default is `10min`) |
 | `log_lock_waits` | `on` | lock waits longer than `deadlock_timeout` appear in **Logs** |
@@ -244,7 +252,8 @@ SHOW shared_preload_libraries;                 -- pg_stat_statements, auto_expla
 SELECT extname, extversion FROM pg_extension;  -- pg_stat_statements in the database
 SELECT count(*) FROM pg_stat_statements;       -- no error
 SHOW track_io_timing;                          -- on
-SHOW log_line_prefix;                          -- contains %m, %t or %n
+SHOW log_line_prefix;                          -- for stderr: contains %m, %t or %n
+SHOW log_timezone;                             -- official pgmetrics: its host's zone, or UTC
 SELECT pg_current_logfile();                   -- log file path, if the role may call it
 ```
 

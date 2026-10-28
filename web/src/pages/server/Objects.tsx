@@ -3,7 +3,7 @@ import { HardDrive } from 'lucide-react'
 import { useApi } from '../../lib/api'
 import { go } from '../../lib/router'
 import { arr, settingNum, tableKey, useSrv } from '../../lib/server'
-import { fmtAgo, fmtBytes, fmtInt, fmtMs, fmtNum, fmtPct, fmtTime, now, pct, plural, truncate } from '../../lib/format'
+import { fmtAgo, fmtBytes, fmtInt, fmtMs, fmtNum, fmtPct, fmtTime, pct, plural, truncate } from '../../lib/format'
 import { t } from '../../lib/i18n'
 import { Chart, Charts } from '../../components/Chart'
 import { DataTable } from '../../components/Table'
@@ -330,7 +330,7 @@ export function IndexManagement() {
   const at = R.meta.at
   const [tab, setTab] = useState<'unused' | 'bloated' | 'duplicate'>('unused')
   const [days, setDays] = useState('stats')
-  const base = useApi<{ at: number; vals: Record<string, number> }>(days === 'stats' ? null : `/servers/${id}/baseline?prefix=idx:&field=idx_scan&at=${now() - Number(days) * 86400}`)
+  const base = useApi<{ at: number; vals: Record<string, number> }>(days === 'stats' ? null : `/servers/${id}/baseline?prefix=idx:&field=idx_scan&at=${at - Number(days) * 86400}`)
   const all = arr(R.indexes)
 
   const unused = all.filter(i => {
@@ -406,7 +406,7 @@ export function TopK() {
   const [period, setPeriod] = useState('7')
   const growthPrefix = kind === 'indexes' ? 'idx:' : 'tbl:'
   const growth = crit.startsWith('growth')
-  const base = useApi<{ at: number; vals: Record<string, number> }>(growth ? `/servers/${id}/baseline?prefix=${growthPrefix}&field=${crit === 'growth_rows' ? 'n_live_tup' : 'size'}&at=${now() - Number(period) * 86400}` : null)
+  const base = useApi<{ at: number; vals: Record<string, number> }>(growth ? `/servers/${id}/baseline?prefix=${growthPrefix}&field=${crit === 'growth_rows' ? 'n_live_tup' : 'size'}&at=${R.meta.at - Number(period) * 86400}` : null)
   const objKey = (x: any) => `${growthPrefix}${x.db_name}.${x.schema_name}.${x.name}`
   const delta = (x: any, field: string) => {
     const b = base.data?.vals[objKey(x)]

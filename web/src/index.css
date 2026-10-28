@@ -95,6 +95,7 @@ body { @apply bg-bg text-fg font-sans antialiased text-[13.5px]; }
 .u-legend .u-series:first-child { display: none; }
 .u-select { background: color-mix(in oklab, var(--accent) 15%, transparent); }
 .u-cursor-x, .u-cursor-y { border-color: var(--faint) !important; }
+.u-over { cursor: pointer; } /* a click opens the report of that point */
 
 /* documentation pages (rendered markdown, pages/Docs.tsx) */
 .doc { font-size: 14.5px; line-height: 1.7; }

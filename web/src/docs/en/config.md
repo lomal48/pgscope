@@ -1,13 +1,13 @@
 # Configuring pgscope
 
-A reference of every pgscope server setting: the storage database connection, addresses, the report rate limit, retention, email (SMTP) and AI chat, plus the environment variables of third-party components that affect pgscope. The settings of the Docker agent are described separately in [Docker and Docker Swarm](docker.md).
+A reference of every pgscope server setting: the storage database connection, addresses, sign-up, the report rate and size limits, retention, email (SMTP) and AI chat, plus the environment variables of third-party components that affect pgscope. The settings of the Docker agent are described separately in [Docker and Docker Swarm](docker.md).
 
 ## How settings are applied {#how-to-set}
 
 - pgscope is configured **with environment variables only**. There are no command-line arguments and no configuration file.
 - The variables are read once at startup. Restart pgscope to apply changes.
 - An empty value is the same as an unset variable: the default applies, and SMTP and AI chat stay disabled.
-- Numeric variables accept integers only. A value that cannot be parsed (for example `5m` or `30d`) is silently replaced with the default.
+- Numeric variables accept integers only. A value that cannot be parsed (for example `5m` or `30d`) is silently replaced with the default. An invalid value — a negative retention period, `PGSCOPE_MAX_REPORT_MB` below 1 or an unknown `PGSCOPE_SIGNUP` mode — stops pgscope at startup with a message in the log.
 - Where to set them: in the systemd `EnvironmentFile` (see [Running as a systemd service](install.md#systemd)), in `deploy/.env` for Docker Compose (see [Docker Compose variables](#compose-vars)) or with `docker run -e`.
 
 At startup pgscope logs a line `pgscope listening on ADDRESS (public URL BASE-URL)`, which is handy for checking `PGSCOPE_LISTEN` and `PGSCOPE_BASE_URL`. Whether SMTP and AI chat are enabled is visible in the UI: if not, the notifications form, the invitation form and the AI chat show warnings.
@@ -19,9 +19,11 @@ At startup pgscope logs a line `pgscope listening on ADDRESS (public URL BASE-UR
 | `PGSCOPE_DB` | `postgres://localhost/pgscope` | connection string of the storage database |
 | `PGSCOPE_LISTEN` | `:8080` | HTTP server address and port |
 | `PGSCOPE_BASE_URL` | `http://localhost:8080` | public address of pgscope: links in notifications and invitations, commands in the UI, the cookie Secure flag |
+| `PGSCOPE_SIGNUP` | `first` | who can sign up on their own: `first` — only the first user, `open` — anyone, `closed` — nobody (invitations only) |
 | `PGSCOPE_MIN_REPORT_INTERVAL` | `60` | minimum interval between reports of one server, seconds; `0` means no limit |
-| `PGSCOPE_METRICS_RETENTION_DAYS` | `90` | how many days to keep time series and the history of alerts and changes |
-| `PGSCOPE_REPORT_RETENTION_DAYS` | `14` | how many days to keep full reports; the latest report is always kept |
+| `PGSCOPE_MAX_REPORT_MB` | `256` | the largest report accepted, in MiB, both compressed and decompressed |
+| `PGSCOPE_METRICS_RETENTION_DAYS` | `90` | how many days to keep time series and the history of alerts and changes; `0` keeps them forever |
+| `PGSCOPE_REPORT_RETENTION_DAYS` | `14` | how many days to keep full reports; the latest report is always kept; `0` keeps them forever |
 | `PGSCOPE_SMTP_ADDR` | — | SMTP server `host:port`; empty disables email |
 | `PGSCOPE_SMTP_USER` | — | SMTP login; empty means no authentication |
 | `PGSCOPE_SMTP_PASS` | — | SMTP password |
@@ -29,7 +31,6 @@ At startup pgscope logs a line `pgscope listening on ADDRESS (public URL BASE-UR
 | `PGSCOPE_AI_KEY` | — | Anthropic API key; empty disables AI chat |
 | `PGSCOPE_AI_MODEL` | `claude-opus-5-5` | model used by AI chat |
 | `PGSCOPE_AI_BASE_URL` | — | a different Anthropic API address (proxy or gateway) |
-| `PGSCOPE_AI_PROVIDER` | `anthropic` | read but has no effect: only Anthropic is supported |
 
 ## Connection and addresses {#core}
 
@@ -64,6 +65,7 @@ The address and port where pgscope accepts HTTP requests: the web UI, the UI API
 - pgscope speaks HTTP only. HTTPS is provided by a reverse proxy (see [Reverse proxy and HTTPS](install.md#reverse-proxy)).
 - If the port is taken, pgscope exits with an error.
 - In the Docker image keep `:8080`, as `deploy/docker-compose.yml` does, and choose the host address when publishing the port (`PGSCOPE_PORT`).
+- The HTTP server timeouts are fixed: request headers must arrive within 10 seconds and the whole request with its body within 10 minutes, a response may take up to 35 minutes (enough for an AI chat answer), and an idle connection is closed after 2 minutes. This way a client cannot hold connections open indefinitely.
 
 ### PGSCOPE_BASE_URL {#pgscope-base-url}
 
@@ -85,6 +87,25 @@ Requirements:
 - Behind an HTTPS proxy use `https://…`. If you set `https://` but open pgscope directly over `http://`, sign-in will not work.
 - pgscope does not redirect requests to this address and answers on any host name. The variable affects only links and the cookie.
 
+### PGSCOPE_SIGNUP {#pgscope-signup}
+
+Who can create an account on their own on the **Sign up** page (`POST /api/signup`). The default is `first`.
+
+| Value | Who can sign up |
+|---|---|
+| `first` | only the first user: sign-up is open while the database has no account. The first person to open pgscope becomes the owner, and after that the **Sign up** link disappears from the sign-in page. If every account is deleted, sign-up opens again |
+| `open` | anyone who can open the web UI |
+| `closed` | nobody: accounts are created only from team invitations |
+
+- Accepting a team invitation works with every value.
+- When sign-up is closed, the sign-up page shows **Sign-up of new accounts is disabled. Ask an administrator to invite you.**, and `POST /api/signup` answers 403 with the same text before checking the address and password. `GET /api/signup` tells whether sign-up is open right now (`{"open": true}` or `{"open": false}`); it works without signing in.
+- With `first`, create your own account right after the first start: until then anyone who opens pgscope can sign up and become the owner.
+- Sign-up is the only way to get a regular account with an API key: an invitation creates a team member account without a key (see [Accounts](teams.md#accounts)). If someone else needs servers of their own, set `open` for a while, restart pgscope, let them sign up and restore the previous value.
+- Any other value stops pgscope at startup, for example `PGSCOPE_SIGNUP=yes: use first, open or closed`.
+
+> [!WARNING]
+> When upgrading from a version without this setting: if the database already has accounts, new users can no longer sign up on their own. To keep the old behaviour, set `PGSCOPE_SIGNUP=open`.
+
 ### PGSCOPE_MIN_REPORT_INTERVAL {#pgscope-min-report-interval}
 
 The minimum interval in seconds between accepted reports of one server. The default is `60`.
@@ -93,10 +114,21 @@ The minimum interval in seconds between accepted reports of one server. The defa
 - A report that comes too soon is rejected with status 429 and the message **Reports are being sent too often**. While the previous report of the same server is still being stored, a new one is rejected with status 409 — regardless of this setting.
 - `0` disables the limit.
 - The timestamps are kept in process memory and reset on restart.
-- The hint in the **Sending reports** card of the profile page always mentions 60 seconds, even if the value is changed: the UI text does not depend on this setting.
+- The effective value is shown in the **Sending reports** card of the profile page (**Reports for the same server must be at least … apart.**; with `0` the sentence is hidden) and returned in the `min_report_interval` field of `GET /api/me`.
 - The limit protects the storage database from jobs that send reports in a loop by mistake. The pgscope-agent interval (`PGSCOPE_AGENT_INTERVAL`) and cron schedules must not be shorter than this value; the recommended reporting interval is 5 minutes.
 
 Ingestion status codes are described in detail in [Server responses](collect.md#responses).
+
+### PGSCOPE_MAX_REPORT_MB {#pgscope-max-report-mb}
+
+The largest report pgscope accepts, in MiB. The default is `256`.
+
+- The limit is checked twice: for the request body as it arrives (usually gzip-compressed) and for the data after decompression. It applies to `POST /api/v1/report`, `/api/v1/reportpgbouncer` and `/api/v1/reportpgpool`; the agent heartbeat has its own 4 MiB limit.
+- A larger report is rejected with status 413 and the message **The report is larger than 256 MiB, the limit set by PGSCOPE_MAX_REPORT_MB on the pgscope server** (the message shows the current value).
+- pgmetrics writes about 0.4–1 KiB per table or index, so 256 MiB fits about 250,000 objects.
+- pgscope reads and stores at most 4 reports at once; the others wait their turn. Storing a report takes 5–7 times its size in memory, so in the worst case ingestion needs about 24 × `PGSCOPE_MAX_REPORT_MB` MiB of memory — about 6 GiB with the default. On a host with little memory, lower the limit while keeping a margin above the size of your largest reports.
+- A value below `1` stops pgscope at startup with the message `PGSCOPE_MAX_REPORT_MB must be at least 1`.
+- The body size limit of the reverse proxy must be no lower (`client_max_body_size` in nginx, see [Reverse proxy and HTTPS](install.md#reverse-proxy)).
 
 ### Retention {#retention-vars}
 
@@ -105,8 +137,8 @@ Ingestion status codes are described in detail in [Server responses](collect.md#
 | `PGSCOPE_METRICS_RETENTION_DAYS` | `90` | time series (charts, size growth) and the history of alerts and changes older than the given number of days |
 | `PGSCOPE_REPORT_RETENTION_DAYS` | `14` | full reports older than the given number of days, except the latest report of every server and every PgBouncer instance |
 
-- Cleanup runs when pgscope starts and then every hour. Expired sessions are deleted at the same time.
-- Values are whole days. `0` or a negative number means that every cleanup deletes the whole history (only the latest report is kept).
+- Cleanup runs when pgscope starts and then every hour. Expired sessions are deleted at the same time, whatever the retention values.
+- Values are whole days. `0` means keep forever: with `PGSCOPE_METRICS_RETENTION_DAYS=0` time series and history are not deleted, and with `PGSCOPE_REPORT_RETENTION_DAYS=0` full reports are not deleted. A negative value stops pgscope at startup with the message `PGSCOPE_METRICS_RETENTION_DAYS=-1: set a number of days to keep the data, or 0 to keep it forever` (the same for `PGSCOPE_REPORT_RETENTION_DAYS`).
 - Report retention determines how far back you can open a past report and see its queries, backends and locks. Time series retention determines how deep the charts go: the **30d** range needs at least 30 days.
 - The longer the retention and the more objects in the reports, the larger the storage database. How to estimate and reduce its size is described in [Data storage](data.md#retention).
 
@@ -131,16 +163,18 @@ pgscope sends email through the SMTP server from its settings. In an isolated ne
 
 Emails are plain UTF-8 text. Notifications are written in the language chosen for the channel, invitations in the language of the person who invites. If a channel has several addresses, all of them are in the `To` header of one message and every recipient sees them.
 
-> [!NOTE]
-> pgscope does not add the `Date` and `Message-ID` headers to its emails. Mail servers usually add them; if yours does not, strict mail filters may reject such messages or mark them as spam.
+Every email gets the `Date` and `Message-ID` headers (the `Message-ID` domain is taken from `PGSCOPE_SMTP_FROM`, or `localhost` if the address has none), so strict mail filters do not reject the messages for lacking them.
+
+The channel's address list is cleaned before sending: surrounding spaces are dropped, empty entries (an extra or trailing comma) are skipped, and repeated addresses (case-insensitive) get one copy. If no address remains, sending fails with **No recipient address given**.
 
 **How the connection is made:**
 
 - pgscope connects to `PGSCOPE_SMTP_ADDR` over plain TCP. If the server offers STARTTLS, the connection is upgraded to TLS and the certificate is verified against the host name from `PGSCOPE_SMTP_ADDR`.
 - SMTPS with TLS from the first byte (usually port 465) is not supported. Use port 587 (submission with STARTTLS) or 25.
+- Sending one email — connecting and the whole exchange with the SMTP server — is limited to 30 seconds. If the server does not respond, sending fails, and the **Test** button shows **Could not send the notification: The SMTP server did not accept the message** within 30 seconds.
 - The password is sent only over an encrypted connection: if `PGSCOPE_SMTP_USER` is set, the server must support STARTTLS (except for a server on `localhost`). If the server does not advertise AUTH, sending fails.
 - If the mail server certificate is issued by an internal certificate authority, add its root certificate to the host's system trust store or pass it to pgscope with `SSL_CERT_FILE` (see [Environment variables of third-party components](#other-env)).
-- If the SMTP server rejects a message or is unreachable, pgscope writes the reason to its log with the `smtp:` prefix. The UI shows the error only when you test a channel with the **Test** button: **Could not send the notification: The SMTP server did not accept the message**. Failed notifications are also logged with a `notify email …` line; the UI does not report unsent invitations and access emails, so the invitation link can always be copied from the invitation list.
+- If the SMTP server rejects a message or is unreachable, pgscope writes the reason to its log with the `smtp:` prefix. The UI shows the error only when you test a channel with the **Test** button: **Could not send the notification: The SMTP server did not accept the message**. Failed notifications are also logged with a `notify email …` line. Invitation and access emails are sent in the background: if SMTP is not configured, pgscope logs `team emails are not sent: SMTP is not configured (PGSCOPE_SMTP_ADDR); pass invitation links on yourself` once per run, and a failed delivery is logged as `team email "…" to … not sent: …`. The UI does not report these emails, so the invitation link can always be copied from the invitation list.
 
 An internal relay without authentication:
 
@@ -172,7 +206,8 @@ AI chat answers questions about a server based on its latest report (how it look
 | `PGSCOPE_AI_KEY` | — | Anthropic API key. A non-empty value enables AI chat for all users and servers of this pgscope |
 | `PGSCOPE_AI_MODEL` | `claude-opus-5-5` | Anthropic model identifier |
 | `PGSCOPE_AI_BASE_URL` | — | API base address instead of the standard Anthropic address: a corporate proxy or a gateway compatible with the Anthropic Messages API |
-| `PGSCOPE_AI_PROVIDER` | `anthropic` | reserved: the value is read at startup but not used. The current version has no other providers, including local models |
+
+`PGSCOPE_AI_PROVIDER` from earlier versions is no longer read: there are no other providers, local models included.
 
 **When the chat is disabled** (no key set), the **AI chat** page shows the message **AI chat is not configured. Set PGSCOPE_AI_KEY (an Anthropic API key) and restart pgscope.**, the input field is disabled, and the chat API answers with status 501.
 
@@ -188,7 +223,7 @@ AI chat answers questions about a server based on its latest report (how it look
 
 Query texts may contain literals with data. Role passwords are not part of a pgmetrics report, but setting values are sent as they are: if a password is written in a configuration setting (for example, in `primary_conninfo`) and the monitoring role can read it, it ends up in the summary.
 
-**How the request is made.** pgscope calls the Anthropic Messages API through the official Go SDK: up to 16,000 tokens per answer, caching of the report context between the questions of one conversation, and beta API features (effort level and a server-side fallback model). Only the browser keeps the conversation, in the tab's session storage (`sessionStorage`), separately for each server: it is not stored on the server or in the database, survives a page reload, and disappears when the tab is closed or with the **New conversation** button. Anyone with access to the server can use the chat — the owner and team members. The answer comes in the UI language unless the user writes in another language.
+**How the request is made.** pgscope calls the Anthropic Messages API through the official Go SDK: up to 16,000 tokens per answer, caching of the report context between the questions of one conversation, and beta API features (effort level and a server-side fallback model). Only the browser keeps the conversation, in the tab's session storage (`sessionStorage`), separately for each server: it is not stored on the server or in the database, survives a page reload, and disappears when the tab is closed or with the **New conversation** button. Anyone with access to the server can use the chat — the owner and team members. The answer comes in the UI language unless the user writes in another language. The SDK waits up to 10 minutes per attempt and makes up to 3 attempts, so pgscope keeps a chat response open for up to 35 minutes; allow for this in the proxy's response read timeout (`proxy_read_timeout`).
 
 **Errors.**
 
@@ -231,7 +266,7 @@ These variables are read not by pgscope itself but by the libraries it is built 
 | `PGSCOPE_PORT` | `8080` | the host port pgscope is published on; `127.0.0.1:8080` means the loopback interface only |
 | `PGSCOPE_IMAGE` | `pgscope:latest` | the pgscope image; use a versioned tag so upgrades and rollbacks are explicit |
 
-`PGSCOPE_DB` (`postgres://pgscope@db:5432/pgscope?sslmode=disable`) and `PGSCOPE_LISTEN` (`:8080`) are fixed in the compose file. To keep the data in an external database, edit the compose file. The other variables (`PGSCOPE_BASE_URL`, `PGSCOPE_MIN_REPORT_INTERVAL`, retention, `PGSCOPE_SMTP_*`, `PGSCOPE_AI_KEY`, `PGSCOPE_AI_MODEL`, `PGSCOPE_AI_BASE_URL`) are passed from `.env` with the same defaults as pgscope's.
+`PGSCOPE_DB` (`postgres://pgscope@db:5432/pgscope?sslmode=disable`) and `PGSCOPE_LISTEN` (`:8080`) are fixed in the compose file. To keep the data in an external database, edit the compose file. The other variables (`PGSCOPE_BASE_URL`, `PGSCOPE_SIGNUP`, `PGSCOPE_MIN_REPORT_INTERVAL`, `PGSCOPE_MAX_REPORT_MB`, retention, `PGSCOPE_SMTP_*`, `PGSCOPE_AI_KEY`, `PGSCOPE_AI_MODEL`, `PGSCOPE_AI_BASE_URL`) are passed from `.env` with the same defaults as pgscope's.
 
 Variables that are not in the `environment` section of the `pgscope` service (for example `SSL_CERT_FILE`, `HTTPS_PROXY`, `NO_PROXY`) do not reach the container from `.env`: `.env` only supplies values substituted into the compose file. Add such variables to `environment` yourself, and mount certificate files into the container with `volumes`.
 

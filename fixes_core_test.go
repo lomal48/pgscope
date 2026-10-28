@@ -274,9 +274,13 @@ func TestDuplicateIndexes(t *testing.T) {
 		idx("uq", "CREATE UNIQUE INDEX %s ON s.t USING btree (d)"), idx("t_pkey", "CREATE UNIQUE INDEX %s ON s.t USING btree (d)"),
 		idx("t2_pkey", "CREATE UNIQUE INDEX %s ON s.t2 USING btree (e)"), idx("t2_e_key", "CREATE UNIQUE INDEX %s ON s.t2 USING btree (e)"),
 		idx("x_idx", "CREATE INDEX %s ON s.t USING gist (f)"), idx("t_f_excl", "CREATE INDEX %s ON s.t USING gist (f)"),
+		// a non-unique index cannot back a key constraint, whatever its name (same as Objects.tsx)
+		idx("o_idx", "CREATE INDEX %s ON s.t USING btree (g)"), idx("o_g_key", "CREATE INDEX %s ON s.t USING btree (g)"),
+		// an exclusion constraint's index is non-unique: the unique equivalent is kept, neither is proposed
+		idx("t_h_excl", "CREATE INDEX %s ON s.t USING btree (h)"), idx("uh", "CREATE UNIQUE INDEX %s ON s.t USING btree (h)"),
 	}}
 	items, _ := issueItems(diagnose(m, "ru"), "Дублирующиеся индексы")
-	want := []string{"d.s.n повторяет d.s.u", "d.s.p2 повторяет d.s.p1", "d.s.uc повторяет d.s.pk",
+	want := []string{"d.s.n повторяет d.s.u", "d.s.o_g_key повторяет d.s.o_idx", "d.s.p2 повторяет d.s.p1", "d.s.uc повторяет d.s.pk",
 		"d.s.uq повторяет d.s.t_pkey", "d.s.x_idx повторяет d.s.t_f_excl"}
 	if !slices.Equal(items, want) {
 		t.Fatalf("duplicates = %q, want %q", items, want)
@@ -321,5 +325,32 @@ func TestRetention(t *testing.T) {
 	out, err := cmd.CombinedOutput()
 	if err == nil || !strings.Contains(string(out), "PGSCOPE_REPORT_RETENTION_DAYS=-1") {
 		t.Fatalf("negative retention: err %v, output %s", err, out)
+	}
+}
+
+// report navigation: neighbours of the shown report and the oldest report of its source
+func TestReportNeighbours(t *testing.T) {
+	ctx := authDB(t)
+	h := testMux()
+	defer func(s string) { cfg.Signup = s }(cfg.Signup)
+	c, sid := owner(t, ctx, h)
+	for _, x := range []struct {
+		src string
+		at  int64
+	}{{"", 1000}, {"", 2000}, {"", 3000}, {"pgb", 2500}} {
+		if _, err := db.Exec(ctx, `insert into reports(server_id, source, at, data) values ($1, $2, to_timestamp($3), $4)`,
+			sid, x.src, x.at, gzipBytes([]byte("{}"))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for q, want := range map[string]string{ // code At,Prev,Next,First
+		"?at=2999": "200 2000,1000,3000,1000", "": "200 3000,2000,,1000", "?at=1000": "200 1000,,2000,1000",
+		"?source=pgb": "200 2500,,,2500", "?at=999": "404 ,,,1000", "?source=none": "404 ,,,",
+	} {
+		w := call(h, "GET", fmt.Sprintf("/api/servers/%d/report%s", sid, q), "", c)
+		x := w.Header()
+		if got := fmt.Sprintf("%d %s,%s,%s,%s", w.Code, x.Get("X-Report-At"), x.Get("X-Report-Prev"), x.Get("X-Report-Next"), x.Get("X-Report-First")); got != want {
+			t.Errorf("%q: %s, want %s", q, got, want)
+		}
 	}
 }

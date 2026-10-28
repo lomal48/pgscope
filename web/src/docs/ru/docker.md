@@ -38,7 +38,7 @@ docker build -t pgscope:latest .
 docker build -f Dockerfile.agent --build-arg VERSION=1.0.0 -t pgscope-agent:latest .
 ```
 
-- Образ агента основан на `alpine:3.22` и содержит только `pgscope-agent`, pgmetrics и корневые сертификаты. pgmetrics собирается из исходников ровно той версии, которую использует pgscope (по `go.mod`), поэтому модель отчёта совпадает.
+- Образ агента основан на `alpine:3.22` и содержит только `pgscope-agent`, pgmetrics и корневые сертификаты. pgmetrics собирается из исходников ровно той версии, которую использует pgscope (по `go.mod`), поэтому модель отчёта совпадает. Собирает его скрипт `tools/build-pgmetrics.sh` с исправлениями pgscope (в том числе чтением `csvlog` PostgreSQL 13+); этот pgmetrics можно скопировать и на хосты баз данных, см. [pgmetrics из сборки pgscope](collect.md#pgmetrics-build).
 - `VERSION` попадает в поле «Версия агента» карточки агента на странице «Агенты». Без него версия — `dev`.
 
 Для закрытого контура перенесите образы файлами:
@@ -334,7 +334,7 @@ PGSCOPE_URL=https://pgscope.example.com PGSCOPE_AGENT_CLUSTER=prod-swarm \
 | `PGMETRICS` | `pgmetrics` | путь к pgmetrics |
 | `SSL_CERT_FILE` | — | PEM-файл с сертификатом внутреннего CA, если HTTPS pgscope подписан им; смонтируйте файл в контейнер агента |
 
-Все остальные переменные окружения агента, кроме `PGSCOPE_*`, передаются pgmetrics как есть (например, `PGSSLROOTCERT`). Агент сам задаёт pgmetrics `PGPASSWORD`, `PGSSLMODE`, `PGAPPNAME=pgscope-agent` и `PGCONNECT_TIMEOUT=10`. `PGAPPNAME` на pgmetrics не действует: он всегда подключается с `application_name=pgmetrics`. С `application_name=pgscope-agent` в `pg_stat_activity` видна только проверочная сессия агента.
+Все остальные переменные окружения агента, кроме `PGSCOPE_*`, передаются pgmetrics как есть (например, `PGSSLROOTCERT`). Агент сам задаёт pgmetrics `PGPASSWORD`, `PGSSLMODE` и `PGCONNECT_TIMEOUT=10`. Сессии pgmetrics видны в `pg_stat_activity` с `application_name=pgmetrics`: pgmetrics всегда задаёт его сам, и `PGAPPNAME` этого не меняет. С `application_name=pgscope-agent` видна только проверочная сессия агента.
 
 Compose-файл и стек передают в контейнер только перечисленные в них переменные, см. [Установка на отдельный Docker-хост](#standalone).
 
@@ -399,6 +399,7 @@ Compose-файл и стек передают в контейнер только
 | `role pgscope_monitor may not connect to any database` | выдайте роли `CONNECT` на нужные базы |
 | `pgscope answered HTTP 429: Reports are being sent too often` | интервал сбора меньше `PGSCOPE_MIN_REPORT_INTERVAL`, или два источника отправляют отчёты под одним именем (например, хосты без `PGSCOPE_AGENT_CLUSTER`) |
 | `pgscope answered HTTP 403: Unknown API key` | обновите секрет `pgscope_api_key` ключом из «Профиль» |
+| `pgscope answered HTTP 413: The report is larger than … MiB, the limit set by PGSCOPE_MAX_REPORT_MB on the pgscope server` | отчёт больше предела pgscope: сократите сбор флагами `--omit=bloat`, `-S` или схемами и таблицами в `PGSCOPE_AGENT_PGMETRICS_ARGS` либо поднимите `PGSCOPE_MAX_REPORT_MB` на сервере pgscope, см. [Ограничения частоты и размера](collect.md#limits) |
 | `the agent is not on network …; add it to the agent stack …` | Swarm: объявите сеть в стеке агента, см. [Сети в Docker Swarm](#swarm-networks) |
 | `overlay network … is not attachable …` | разверните агента сервисом Swarm или пересоздайте сеть с `--attachable` |
 | `network … blocks traffic between containers (enable_icc=false)` | используйте другую сеть базы или укажите её в `pgscope.network` |
