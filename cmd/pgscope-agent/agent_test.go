@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -244,5 +247,19 @@ func TestNegotiate(t *testing.T) {
 func TestKV(t *testing.T) {
 	if got := kv("password", `it's\x`); got != `password='it\'s\\x' ` {
 		t.Errorf("kv = %s", got)
+	}
+}
+
+func TestPasswordFileNotAPIKey(t *testing.T) {
+	key := "abcdefghijABCDEFGHIJ12"
+	f := filepath.Join(t.TempDir(), "pgscope_api_key")
+	if err := os.WriteFile(f, []byte(key+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := &agent{cfg: &config{apiKey: key}}
+	// no ip: a regression would try to connect and fail with another message
+	status, msg := a.collect(context.Background(), &target{spec: spec{PasswordFile: f}})
+	if status != "error" || !strings.Contains(msg, "API key") {
+		t.Errorf("collect = %s, %q; want the API key refused", status, msg)
 	}
 }

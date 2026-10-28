@@ -35,6 +35,10 @@ func (a *agent) collect(ctx context.Context, t *target) (status, msg string) {
 			return "error", detail("pgscope.password-file: "+err.Error(), "")
 		}
 		pw = strings.TrimRight(string(b), "\r\n")
+		// a label must not make the agent hand its API key to the labelled container as a password
+		if strings.TrimSpace(pw) == a.cfg.apiKey {
+			return "error", "the label pgscope.password-file names the agent's API key"
+		}
 	}
 	fail := func(status string, err error) (string, string) {
 		if status == "" {
