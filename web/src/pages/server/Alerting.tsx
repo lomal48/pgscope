@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
-import { BellOff, CheckCircle2, Mail, Plus, Send, Trash2, UserPlus } from 'lucide-react'
+import { ArrowRight, BellOff, CheckCircle2, Mail, Plus, Send, Trash2, UserPlus } from 'lucide-react'
 import { api, useApi } from '../../lib/api'
-import { go } from '../../lib/router'
+import { go, withAt } from '../../lib/router'
 import { useApp, useSrv } from '../../lib/server'
 import { fmtBytes, fmtDec, fmtDur, fmtMs, fmtTime } from '../../lib/format'
 import { DataTable } from '../../components/Table'
@@ -152,6 +152,11 @@ function Notifiers({ scope, data, reload }: { scope: string; data: AlertsResp; r
   )
 }
 
+// ReportLink opens the server's report of an event (an alert check or a detected change)
+const ReportLink = ({ id, at }: { id: number; at: number }) => (
+  <a className="btn btn-sm btn-ghost" href={'#' + withAt(`/s/${id}`, at)}>{t('Открыть отчёт')}<ArrowRight className="size-3.5" /></a>
+)
+
 export function Alerts() {
   const { id } = useSrv()
   const { reloadServers } = useApp()
@@ -207,7 +212,7 @@ export function Alerts() {
         )}
         {tab === 'notify' && <Notifiers scope="alerts" data={data} reload={reload} />}
         {tab === 'history' && (events.length === 0 ? <Card><Empty icon={<BellOff className="size-8" />} title={t('Уведомлений об оповещениях пока не было')} /></Card> : events.map((e, i) => (
-          <Card key={i} title={fmtTime(new Date(e.at).getTime() / 1000)} sub={e.body.alerts.length ? t('Сработало оповещений: {n}', { n: e.body.alerts.length }) : t('Все оповещения сняты')}>
+          <Card key={i} title={fmtTime(new Date(e.at).getTime() / 1000)} actions={<ReportLink id={id} at={Math.floor(Date.parse(e.at) / 1000)} />} sub={e.body.alerts.length ? t('Сработало оповещений: {n}', { n: e.body.alerts.length }) : t('Все оповещения сняты')}>
             {e.body.alerts.length === 0 ? <div className="flex items-center gap-2 text-good"><CheckCircle2 className="size-4" />{t('Оповещения сняты')}</div> : (
               <ul className="space-y-1">{e.body.alerts.map((a: AlertItem, k: number) => (
                 <li key={k} className="flex items-center gap-2"><SevBadge sev={a.type} />{a.text} — <b>{a.objname}</b>: {a.value}</li>
@@ -263,7 +268,7 @@ export function ChangeAlerts() {
         <Notifiers scope="changes" data={data} reload={reload} />
         <Section title={t('Обнаруженные изменения ({n})', { n: events.length })}>
           {events.length === 0 ? <Card><Empty icon={<BellOff className="size-8" />} title={t('Изменений пока не обнаружено')} /></Card> : events.map((e, i) => (
-            <Card key={i} className="mb-2" title={fmtTime(e.body.currreport)} sub={t('по сравнению с отчётом от {time}', { time: fmtTime(e.body.prevreport) })}>
+            <Card key={i} className="mb-2" title={fmtTime(e.body.currreport)} actions={<ReportLink id={id} at={e.body.currreport} />} sub={t('по сравнению с отчётом от {time}', { time: fmtTime(e.body.prevreport) })}>
               <DataTable rows={e.body.changes} dense cols={[
                 { key: 'item', label: t('Изменение'), render: (c: any) => <span className="font-medium">{c.item}</span> },
                 { key: 'prev', label: t('Было'), className: 'mono text-muted break-all' },

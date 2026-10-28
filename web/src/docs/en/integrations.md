@@ -90,7 +90,7 @@ In Docker and Docker Swarm, the pgscope agent can send PgBouncer reports: beside
 
 ### What the page shows {#pgbouncer-page}
 
-The **PgBouncer** page always shows the latest report of the selected instance (subtitle "Report from …"), even if a past server report is selected in the server bar; the charts cover the selected period. If there are several instances, the switcher is at the top right.
+The **PgBouncer** page shows the latest report of the selected instance, and when a past moment is selected in the server bar, its report at or before that moment (the report time is in the subtitle "Report from …"; if there is no PgBouncer report up to that moment, the page shows **No PgBouncer report at this moment**). The **‹** and **›** buttons step through the main server's reports; the charts cover the selected period, and clicking them selects a moment. If there are several instances, the switcher is at the top right.
 
 Cards (from `SHOW CLIENTS` and `SHOW SERVERS`):
 

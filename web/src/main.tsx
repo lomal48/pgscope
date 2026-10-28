@@ -79,7 +79,7 @@ function Root() {
     } else {
       const sub = '/' + (s['*'] ?? '')
       page = (
-        <ServerProvider srv={srv}>
+        <ServerProvider key={srv.id} srv={srv}>
           <ServerBar />
           <div className="px-6 py-5 max-w-[1600px]">{serverRoutes(srv, sub.replace(/\/$/, '') || '/')}</div>
         </ServerProvider>

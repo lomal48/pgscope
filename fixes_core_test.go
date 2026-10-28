@@ -308,3 +308,30 @@ func TestRetention(t *testing.T) {
 		t.Fatalf("negative retention: err %v, output %s", err, out)
 	}
 }
+
+// report navigation: neighbours of the shown report and the oldest report of its source
+func TestReportNeighbours(t *testing.T) {
+	ctx := authDB(t)
+	h := testMux()
+	defer func(s string) { cfg.Signup = s }(cfg.Signup)
+	c, sid := owner(t, ctx, h)
+	for _, x := range []struct {
+		src string
+		at  int64
+	}{{"", 1000}, {"", 2000}, {"", 3000}, {"pgb", 2500}} {
+		if _, err := db.Exec(ctx, `insert into reports(server_id, source, at, data) values ($1, $2, to_timestamp($3), $4)`,
+			sid, x.src, x.at, gzipBytes([]byte("{}"))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for q, want := range map[string]string{ // code At,Prev,Next,First
+		"?at=2999": "200 2000,1000,3000,1000", "": "200 3000,2000,,1000", "?at=1000": "200 1000,,2000,1000",
+		"?source=pgb": "200 2500,,,2500", "?at=999": "404 ,,,1000", "?source=none": "404 ,,,",
+	} {
+		w := call(h, "GET", fmt.Sprintf("/api/servers/%d/report%s", sid, q), "", c)
+		x := w.Header()
+		if got := fmt.Sprintf("%d %s,%s,%s,%s", w.Code, x.Get("X-Report-At"), x.Get("X-Report-Prev"), x.Get("X-Report-Next"), x.Get("X-Report-First")); got != want {
+			t.Errorf("%q: %s, want %s", q, got, want)
+		}
+	}
+}

@@ -10,7 +10,7 @@ import { DataTable } from '../../components/Table'
 import { Badge, Card, Empty, ErrorBox, KV, Loading, PageHeader, Section, SevBadge, SevIcon, Stat, Stats, Tabs, cx } from '../../components/ui'
 
 export function Overview() {
-  const { report: r, srv } = useSrv()
+  const { report: r, srv, pinnedAt } = useSrv()
   const R = r!
   const dbs = arr(R.databases)
   const size = dbs.reduce((a, d) => a + (d.size > 0 ? d.size : 0), 0)
@@ -57,7 +57,7 @@ export function Overview() {
             [t('Собрано'), R.meta.local ? t('{collector} (локально)', { collector }) : collector],
           ]} />
         </Card>
-        <Card title={t('Активные оповещения')} actions={<a className="btn btn-sm btn-ghost" href={`#/s/${srv.id}/alerts`}>{t('Управление')}<ArrowRight className="size-3.5" /></a>}>
+        <Card title={t('Активные оповещения')} sub={pinnedAt ? t('Текущее состояние, не на момент отчёта') : undefined} actions={<a className="btn btn-sm btn-ghost" href={`#/s/${srv.id}/alerts`}>{t('Управление')}<ArrowRight className="size-3.5" /></a>}>
           {alerts.length === 0 ? (
             <div className="flex items-center gap-2 text-muted py-6 justify-center"><CheckCircle2 className="size-4 text-good" />{t('Нет сработавших оповещений')}</div>
           ) : (

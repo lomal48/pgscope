@@ -52,12 +52,9 @@ Most of the space is taken by `metrics` and `reports`. The object key in `metric
 |---|---|---|
 | Charts on server pages, the **Size growth** and **Row count growth** criteria in **Top-k**, the period on the **Unused** tab of **Index management** | `metrics` | `PGSCOPE_METRICS_RETENTION_DAYS` |
 | The **History** tab in **Alerts** and the **Detected changes** list | `events` | `PGSCOPE_METRICS_RETENTION_DAYS`; the interface shows the latest 200 events |
-| Picking a past report in the top bar: queries, backends, locks, plans, logs and diagnostics at that moment | `reports` | `PGSCOPE_REPORT_RETENTION_DAYS` |
+| Navigating past reports in the top bar: queries, backends, locks, plans, logs and diagnostics at that moment | `reports` | `PGSCOPE_REPORT_RETENTION_DAYS` |
 | Current page data, diagnostics, AI chat, comparison with the previous report for change alerts | latest rows of `reports` | the latest report of each source is always kept |
 | Server list and Inspector | `servers` | as long as the server exists |
-
-> [!NOTE]
-> The report list in the server top bar shows at most the 2,000 most recent reports from the last 30 days. With a report every 5 minutes that is about 7 days. Older reports are kept until they expire, but you cannot pick them in the interface.
 
 ## Retention {#retention}
 
@@ -83,7 +80,7 @@ Not deleted automatically: the servers themselves (even if reports stopped long 
 Choosing the periods:
 
 - `PGSCOPE_METRICS_RETENTION_DAYS` should be no shorter than the longest period you use: the **30d** chart range needs at least 30 days, and the **in the last 90 days** option in **Index management** needs at least 90.
-- `PGSCOPE_REPORT_RETENTION_DAYS` sets how many days back you can open a full report (subject to the report list limit described above). Reports are compressed, but on servers with thousands of tables each one takes noticeable space.
+- `PGSCOPE_REPORT_RETENTION_DAYS` sets how many days back you can open a full report: any stored report opens in the server top bar. Reports are compressed, but on servers with thousands of tables each one takes noticeable space.
 
 After lowering a retention period, the next pass deletes a lot of rows. PostgreSQL reuses the freed space, but the table files do not shrink by themselves; see [Reclaiming disk space](#reclaim-space).
 

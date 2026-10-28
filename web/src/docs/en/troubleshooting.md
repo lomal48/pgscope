@@ -159,7 +159,7 @@ The **Execution plans** section of a query page shows **No execution plans captu
 - pgmetrics reads the log: it connects to the database locally on its host and runs as an OS user allowed to read the log files (see [the next section](#no-logs)); for RDS and Aurora the log is read through the AWS API with `--aws-rds-dbid`;
 - the plan was logged within the last `--log-span` minutes (5 by default). Make `--log-span` equal to the collection interval.
 
-Plans are shown for the selected report and matched to the query by its identifier or by its text with literals removed. If a plan is in the log but not shown, pick the report taken right after the query ran in the top bar.
+Plans are shown for the selected report and matched to the query by its identifier or by its text with literals removed. If a plan is in the log but not shown, open the report taken right after the query ran: with **›** or the **Go to a moment** dialog in the top bar (see [Viewing a past report](ui.md#report-picker)).
 
 ## No logs, system metrics or autovacuum history {#no-logs}
 
@@ -178,7 +178,7 @@ The Docker agent runs pgmetrics in its own container and connects to the databas
 
 - **Not enough data in this range yet.** Most charts show a rate or ratio over the interval between neighboring reports, so the selected range needs at least two reports. Right after connecting a server, wait for the second report or pick a longer range.
 - **Gaps.** A report did not arrive; counters were reset (PostgreSQL restart, `pg_stat_reset()`) — that interval is skipped rather than drawn negative; pgmetrics could not read a size because of a lock (`--lock-timeout`) — the point is skipped rather than drawn as zero; pgmetrics did not get a WAL position (LSN), for example for `pg_basebackup` or a standby without a WAL receiver — the standby lag, slot WAL retention or WAL generation point is skipped.
-- **The chart ends in the past.** A past report is selected in the top bar: charts end at that report. Select **Latest report**.
+- **The chart shows a past time.** A past moment is selected in the top bar (a colored line runs along its top edge): charts are built around the selected report, which is marked with a dashed line. Press **Latest**.
 - **No recent points although reports arrive.** The collection host clock runs fast: the report time is set by the collection host, while charts are drawn up to the browser's current time. Synchronize clocks (NTP).
 - **No old data.** Time series older than `PGSCOPE_METRICS_RETENTION_DAYS` days are deleted unless the value is `0` (see [Retention](data.md#retention)).
 - **Load and memory charts are empty.** pgmetrics does not connect to the database locally or does not run on Linux (see [No logs, system metrics or autovacuum history](#no-logs)).
@@ -288,7 +288,7 @@ ALTER DATABASE pgscope OWNER TO pgscope;
 
 **Where is the AI chat conversation stored?** Only in the browser tab, until it is closed. The storage database does not keep it.
 
-**Why does the report list have no old reports?** The list in the top bar shows the reports from the last 30 days, but at most the 2000 most recent — about 7 days with a report every 5 minutes. Older reports are kept until the retention period ends, but you cannot pick them in the interface (see [What depends on what](data.md#dependencies)).
+**Why does an old report not open?** Full reports are kept for `PGSCOPE_REPORT_RETENTION_DAYS` days (14 by default). Any report within that period can be opened with **‹** and **›**, the **Go to a moment** dialog or a chart click; for an earlier moment the page shows **No report at this moment** (see [Viewing a past report](ui.md#report-picker) and [What depends on what](data.md#dependencies)).
 
 **How do I rename a server?** The name is the server's identifier. Reports under a new name create a new server, and the old one stays with its history and latest report until it is deleted. History cannot be moved to the new name in the interface.
 

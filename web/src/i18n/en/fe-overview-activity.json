@@ -193,5 +193,6 @@
   "Взаимоблокировки": "Deadlocks",
   "Взаимоблокировки в журнале": "Deadlocks in logs",
   "запрос|запроса|запросов": "query|queries",
-  "подключение|подключения|подключений": "connection|connections"
+  "подключение|подключения|подключений": "connection|connections",
+  "Текущее состояние, не на момент отчёта": "Current state, not as of the report"
 }

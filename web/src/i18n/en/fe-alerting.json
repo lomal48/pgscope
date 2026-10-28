@@ -193,5 +193,7 @@
   "В работе": "Up",
   "Операторы · узел {node}": "Statements · node {node}",
   "Отставание репликации · узел {node}": "Replication lag · node {node}",
-  "Отставание": "Lag"
+  "Отставание": "Lag",
+  "Открыть отчёт": "Open report",
+  "Нет отчёта PgBouncer на этот момент": "No PgBouncer report at this moment"
 }

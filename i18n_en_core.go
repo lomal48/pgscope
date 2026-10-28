@@ -128,6 +128,7 @@ func init() {
 
 		// API, accounts, team sharing
 		"Отчётов пока нет":                               "No reports yet",
+		"Нет отчёта на этот момент или раньше":           "No report at or before this time",
 		"Некорректный префикс":                           "Invalid prefix",
 		"Некорректный запрос":                            "Invalid request",
 		"Внутренняя ошибка сервера":                      "Internal server error",

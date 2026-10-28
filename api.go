@@ -2,10 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func listServers(w http.ResponseWriter, r *http.Request, u *user) {
@@ -49,20 +52,47 @@ func listServers(w http.ResponseWriter, r *http.Request, u *user) {
 	writeJSON(w, out)
 }
 
-// getReport streams the stored (gzipped) pgmetrics JSON as-is.
+// getReport streams the stored (gzipped) pgmetrics JSON as-is: the newest report of ?source= at or
+// before ?at= (unix seconds; default: the latest). X-Report-At is its time, X-Report-Prev and
+// X-Report-Next the neighbouring reports of the source, X-Report-First the oldest stored one (sent
+// on 404 too); a header is absent when there is no such report.
 func getReport(w http.ResponseWriter, r *http.Request, s *server) {
-	at := qInt(r, "at", time.Now().Unix()+86400)
+	at, src := qInt(r, "at", 0), r.URL.Query().Get("source")
+	var first *int64
+	if err := db.QueryRow(r.Context(), `select extract(epoch from min(at))::bigint from reports
+		where server_id = $1 and source = $2`, s.ID, src).Scan(&first); err != nil {
+		internalErr(w, err)
+		return
+	}
+	setUnix(w, "X-Report-First", first)
+	lim := at
+	if lim <= 0 {
+		lim = time.Now().Unix() + 86400
+	}
 	var data []byte
 	var ts int64
-	err := db.QueryRow(r.Context(), `select data, extract(epoch from at)::bigint from reports
-		where server_id = $1 and source = $2 and at <= to_timestamp($3) order by at desc limit 1`,
-		s.ID, r.URL.Query().Get("source"), at).Scan(&data, &ts)
+	var prev, next *int64
+	err := db.QueryRow(r.Context(), `select r.data, extract(epoch from r.at)::bigint,
+		(select extract(epoch from max(p.at))::bigint from reports p where p.server_id = $1 and p.source = $2 and p.at < r.at),
+		(select extract(epoch from min(n.at))::bigint from reports n where n.server_id = $1 and n.source = $2 and n.at > r.at)
+		from reports r where r.server_id = $1 and r.source = $2 and r.at <= to_timestamp($3) order by r.at desc limit 1`,
+		s.ID, src, lim).Scan(&data, &ts, &prev, &next)
+	if errors.Is(err, pgx.ErrNoRows) {
+		if at > 0 && first != nil {
+			httpErr(w, 404, "Нет отчёта на этот момент или раньше")
+		} else {
+			httpErr(w, 404, "Отчётов пока нет")
+		}
+		return
+	}
 	if err != nil {
-		httpErr(w, 404, "Отчётов пока нет")
+		internalErr(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Report-At", strconv.FormatInt(ts, 10))
+	setUnix(w, "X-Report-At", &ts)
+	setUnix(w, "X-Report-Prev", prev)
+	setUnix(w, "X-Report-Next", next)
 	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 		w.Header().Set("Content-Encoding", "gzip")
 		w.Write(data)
@@ -70,6 +100,12 @@ func getReport(w http.ResponseWriter, r *http.Request, s *server) {
 	}
 	raw, _ := gunzip(data)
 	w.Write(raw)
+}
+
+func setUnix(w http.ResponseWriter, k string, v *int64) {
+	if v != nil {
+		w.Header().Set(k, strconv.FormatInt(*v, 10))
+	}
 }
 
 func listReports(w http.ResponseWriter, r *http.Request, s *server) {
@@ -165,7 +201,11 @@ func getBaseline(w http.ResponseWriter, r *http.Request, s *server) {
 func getDiagnostics(w http.ResponseWriter, r *http.Request, s *server) {
 	m, err := loadModel(r.Context(), s.ID, "", qInt(r, "at", 0))
 	if err != nil {
-		httpErr(w, 404, "Отчётов пока нет")
+		if qInt(r, "at", 0) > 0 {
+			httpErr(w, 404, "Нет отчёта на этот момент или раньше")
+		} else {
+			httpErr(w, 404, "Отчётов пока нет")
+		}
 		return
 	}
 	writeJSON(w, map[string]any{"at": m.Metadata.At, "issues": diagnose(m, reqLang(r)), "config": configCheck(m, reqLang(r))})

@@ -64,7 +64,8 @@ const css = (v: string) => getComputedStyle(document.documentElement).getPropert
 export function Chart({ title, obj, fields, unit, height = 190, sub }: {
   title: string; obj: string; fields: Field[]; unit: Unit; height?: number; sub?: string
 }) {
-  const { id, from, to, tick } = useSrv()
+  const { id, from, to, tick, pinnedAt, reportAt, setPinnedAt } = useSrv()
+  const mark = pinnedAt ? reportAt : null // the shown past report: marker and legend value
   const lang = useLang() // axis/legend text, LOCALE time formats and TZ are baked into the plot
   const [data, setData] = useState<Series | null>(null)
   const [err, setErr] = useState<string>()
@@ -102,6 +103,24 @@ export function Chart({ title, obj, fields, unit, height = 190, sub }: {
       padding: [8, 8, 0, 0],
       cursor: { points: { size: 8 }, drag: { x: false, y: false } },
       legend: { show: true, live: true },
+      // a dashed accent line at the shown past report
+      hooks: {
+        draw: [u => {
+          if (mark == null) return
+          const x = u.valToPos(mark, 'x', true)
+          if (x < u.bbox.left || x > u.bbox.left + u.bbox.width) return
+          const c = u.ctx, d = devicePixelRatio
+          c.save()
+          c.strokeStyle = css('--accent')
+          c.lineWidth = d
+          c.setLineDash([4 * d, 3 * d])
+          c.beginPath()
+          c.moveTo(x, u.bbox.top)
+          c.lineTo(x, u.bbox.top + u.bbox.height)
+          c.stroke()
+          c.restore()
+        }],
+      },
       // ticks fall on whole hours and days of TZ, not of the browser's zone; uPlot's shortcut for
       // UTC misplaces ticks on the days the browser's zone changes clocks, Etc/GMT takes its general path
       tzDate: ts => uPlot.tzDate(new Date(ts * 1000), TZ === 'UTC' || TZ === 'Etc/UTC' ? 'Etc/GMT' : TZ),
@@ -125,9 +144,9 @@ export function Chart({ title, obj, fields, unit, height = 190, sub }: {
           fill: fields.length === 1 ? colors[0] + '1f' : undefined,
           points: { show: false },
           spanGaps: false,
-          // without a hovered point the legend shows the latest value
+          // without a hovered point the legend shows the value at the shown past report, else the latest
           value: (_u: uPlot, v: number | null, _s: number, idx: number | null) => {
-            if (v == null && idx == null) v = ys[i].findLast(x => x != null) ?? null
+            if (v == null && idx == null) v = ys[i].findLast((x, k) => x != null && (mark == null || data.t[k] <= mark)) ?? null
             return v == null ? '—' : fmt[unit](v)
           },
         })),
@@ -135,6 +154,15 @@ export function Chart({ title, obj, fields, unit, height = 190, sub }: {
     }
     plot.current?.destroy()
     plot.current = new uPlot(opts, [data.t, ...ys] as uPlot.AlignedData, box.current)
+    // a mouse or pen click opens the report of that point; a tap only shows the values
+    let touch = false
+    const over = plot.current.over
+    over.addEventListener('pointerdown', e => { touch = e.pointerType === 'touch' })
+    over.addEventListener('click', e => {
+      // the point under the click, also when the cursor has not seen a mousemove yet
+      const i = plot.current?.posToIdx(e.clientX - over.getBoundingClientRect().left)
+      if (!touch && i != null && data.t[i] != null) setPinnedAt(data.t[i])
+    })
     const ro = new ResizeObserver(() => box.current && plot.current?.setSize({ width: box.current.clientWidth, height }))
     ro.observe(box.current)
     return () => {
@@ -142,7 +170,7 @@ export function Chart({ title, obj, fields, unit, height = 190, sub }: {
       plot.current?.destroy()
       plot.current = null
     }
-  }, [data, fields, unit, height, theme, hasData, lang, TZ])
+  }, [data, fields, unit, height, theme, hasData, lang, TZ, mark])
 
   return (
     <Card title={title} sub={sub} pad={false}>

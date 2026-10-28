@@ -147,7 +147,7 @@ The UI language affects page texts, error messages and the language of the email
 
 ### Time zone {#time-zone}
 
-In the **Time zone** card ("Dates and times in the interface are shown in this time zone. It is saved to your profile.") choose the zone in which the UI shows dates and times: in tables, the report list, the alert history and on charts. The first option is **Same as the browser ({zone})** with the browser's zone in place of `{zone}`, for example **Same as the browser (Europe/Moscow)**; it is the default. Next come `UTC` and every zone the browser knows, with its current offset, for example `Asia/Tokyo (UTC+09:00)`.
+In the **Time zone** card ("Dates and times in the interface are shown in this time zone. It is saved to your profile.") choose the zone in which the UI shows dates and times: in tables, report navigation, the alert history and on charts. The first option is **Same as the browser ({zone})** with the browser's zone in place of `{zone}`, for example **Same as the browser (Europe/Moscow)**; it is the default. Next come `UTC` and every zone the browser knows, with its current offset, for example `Asia/Tokyo (UTC+09:00)`.
 
 The choice applies at once and is saved to your profile, so signing in from another computer shows times in the same zone. With **Same as the browser** every browser shows times in its own zone. If this browser does not know the saved zone, times are shown in the browser's zone and the list shows **Same as the browser**. Before sign-in the browser's zone is used.
 

@@ -72,7 +72,7 @@ The channels that receive notifications about these alerts: email, Slack, PagerD
 
 ### The History tab {#history}
 
-A timeline of changes of the set of triggered alerts, newest first. Each card is a moment when the set changed: the report time in the title, the caption "Alerts triggered: N" and the list of alerts (severity, rule, object, value), or, when no triggered alerts remain, the caption "All alerts cleared" and the mark **Alerts cleared**. Until the set has changed, the tab shows **No alert notifications yet**.
+A timeline of changes of the set of triggered alerts, newest first. Each card is a moment when the set changed: the report time in the title, the caption "Alerts triggered: N" and the list of alerts (severity, rule, object, value), or, when no triggered alerts remain, the caption "All alerts cleared" and the mark **Alerts cleared**. The **Open report** button on a card opens the server's **Overview** as of that report (see [Viewing a past report](ui.md#report-picker)); if the report is older than the report retention, the page says so. Until the set has changed, the tab shows **No alert notifications yet**.
 
 The page shows the server's last 200 events (alerts and changes together). History is kept as long as time series — `PGSCOPE_METRICS_RETENTION_DAYS` days (90 by default; `0` keeps it forever), see [Data storage](data.md#retention).
 

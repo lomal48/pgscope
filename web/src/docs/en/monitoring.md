@@ -6,7 +6,7 @@ This page describes the **Monitor** group of a PostgreSQL server: the **Overview
 
 The **Overview** opens when you click a server card on the **Servers** page, pick a server in the switcher or choose **Overview** in the menu (address `#/s/<id>`). The header shows the full PostgreSQL version string and a role badge: **Primary** or **Standby**.
 
-All values except alerts come from the displayed report — the latest one or the one selected in the top bar (see [Viewing a past report](ui.md#report-picker)). If the server has not sent a single report yet, the page shows **No report received yet**.
+All values except alerts come from the displayed report — the latest one or the report of the moment selected in the top bar (see [Viewing a past report](ui.md#report-picker)). If the server has not sent a single report yet, the page shows **No report received yet**, and if the selected moment is earlier than the earliest stored report, **No report at this moment**.
 
 ### Metric cards {#overview-stats}
 
@@ -48,7 +48,7 @@ Things worth attention: an old last checkpoint under active writes (check `check
 
 The **Active alerts** card shows up to 20 triggered alerts: a severity icon, the rule text, the object and the current value. The **Manage** button opens the rules page (see [Alert rules](alerts.md)). If nothing is triggered, it says **No triggered alerts**.
 
-The card and the **Alerts** counter always show the current alert state, even when a past report is selected in the top bar.
+The card and the **Alerts** counter always show the current alert state, even when a past moment is selected in the top bar; the card then reads **Current state, not as of the report** under its title.
 
 ### Activity charts {#overview-charts}
 

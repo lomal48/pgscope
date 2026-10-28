@@ -224,11 +224,11 @@ Server:
 
 | Method and path | Purpose | Available to |
 |---|---|---|
-| `GET /api/servers/{id}/report` | the full pgmetrics report: the latest one, or the latest at or before `?at=` (Unix seconds); `?source=` is a PgBouncer name. The report time is in the `X-Report-At` header. If the client accepts gzip, the report is sent compressed | owner and members |
+| `GET /api/servers/{id}/report` | the full pgmetrics report: the latest one, or the latest at or before `?at=` (Unix seconds); `?source=` is a PgBouncer name. The report time is in the `X-Report-At` header, the neighbouring reports of the same source in `X-Report-Prev` and `X-Report-Next`, the earliest stored one in `X-Report-First` (sent with a 404 too); a header is absent when there is no such report. 404 "No report at or before this time" when no report is found with `?at=` but later ones exist; "No reports yet" when there are none at all; an internal error is a 500. If the client accepts gzip, the report is sent compressed | owner and members |
 | `GET /api/servers/{id}/reports` | report times starting from `?from=` (Unix seconds), at most 2000, newest first; `?source=` is a PgBouncer name | owner and members |
 | `GET /api/servers/{id}/series` | an object's time series: `?obj=` is the object key (see [Storage database tables](data.md#tables)), `?fields=` comma-separated fields, `?from=` and `?to=` Unix seconds (the last day by default) | owner and members |
 | `GET /api/servers/{id}/baseline` | the value of field `?field=` for all objects with prefix `?prefix=` (for example `tbl:`) from the first report at or after `?at=` | owner and members |
-| `GET /api/servers/{id}/diagnostics` | diagnostics and configuration check for the latest report or the report at `?at=` | owner and members |
+| `GET /api/servers/{id}/diagnostics` | diagnostics and configuration check for the latest report or the report at `?at=`; without a report, 404 "No reports yet", and with `?at=`, 404 "No report at or before this time" | owner and members |
 | `GET /api/servers/{id}/alerts` | metric catalog, rules, triggered alerts, change alert settings, channels, the latest 200 events | owner and members |
 | `POST /api/servers/{id}/alerts/rules` | add a rule | owner and members |
 | `DELETE /api/servers/{id}/alerts/rules/{rid}` | delete a rule | owner and members |

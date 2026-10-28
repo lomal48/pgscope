@@ -123,6 +123,10 @@ export function fmtTime(ts: number | null | undefined): string {
   return fmtDate(ts, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
+// fmtShort: day, month and time; the year only when it is not the current one (in TZ)
+export const fmtShort = (ts: number) => fmtDate(ts, fmtDate(ts, { year: 'numeric' }) === fmtDate(now(), { year: 'numeric' })
+  ? { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' } : { dateStyle: 'medium', timeStyle: 'short' })
+
 // memory settings are reported in units of 8kB pages, kB, or MB
 const SETTING_UNIT: Record<string, number> = {
   shared_buffers: 8192, effective_cache_size: 8192, wal_buffers: 8192, temp_buffers: 8192,

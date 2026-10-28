@@ -1,6 +1,6 @@
 # Common scenarios
 
-Step-by-step recipes for common tasks: connect a server, investigate a slow query, deal with bloat, replication lag, wraparound risk and running out of connections, clean up indexes safely, set up on-call alerts in an air-gapped network, connect many Docker databases and give a colleague access. Each interface page is covered in detail in its own section of the documentation; links are given along the way.
+Step-by-step recipes for common tasks: connect a server, investigate a slow query and a past incident, deal with bloat, replication lag, wraparound risk and running out of connections, clean up indexes safely, set up on-call alerts in an air-gapped network, connect many Docker databases and give a colleague access. Each interface page is covered in detail in its own section of the documentation; links are given along the way.
 
 ## Monitor a new server in 10 minutes {#new-server}
 
@@ -62,7 +62,7 @@ Do not send reports for one server more often than `PGSCOPE_MIN_REPORT_INTERVAL`
 ## Investigate a slow query {#slow-query}
 
 1. **When it started.** On **Overview**, pick a chart range (**1h** … **30d**) and find the moment when transactions, the number of backends or the cache hit ratio changed.
-2. **If the problem was in the past**, pick a report from that time in the report list in the top bar (**Latest report** is selected there by default): **Queries**, **Backends**, **Locks** and **Diagnostics** then show the state at that moment. The list holds the reports from the last 30 days, but at most the 2000 most recent: at one report every 5 minutes that is about 7 days.
+2. **If the problem was in the past**, click the chart at that moment or open the **Go to a moment** dialog with the report time button in the top bar: **Queries**, **Backends**, **Locks** and **Diagnostics** then show the state at that moment, and the **‹** and **›** buttons (or the `[` and `]` keys) switch to the neighbouring reports. Reports from the last `PGSCOPE_REPORT_RETENTION_DAYS` days (14 by default) are available, see [Viewing a past report](ui.md#report-picker).
 3. **Which queries are the heaviest.** On **Queries**, sort by **Total time**: the bar shows each query's share of the total time. The most expensive queries are not necessarily the slowest: a frequent fast query can take more time than a rare slow one.
 4. **Query page.** Click a query to open it. The **Suggestions** block has automatic hints: low cache hit ratio, temp files, too many rows per call, high time variance. On the charts, compare mean time and the number of calls per interval: did the query get slower, or is it called more often?
 5. **Plan.** The **Execution plans** section shows `auto_explain` plans with warnings under the nodes (row estimate mismatch, Seq Scan discarding rows, sort spilling to disk). If there are no plans, see [No execution plans](troubleshooting.md#no-plans).
@@ -76,6 +76,19 @@ CREATE INDEX CONCURRENTLY orders_customer_id_idx ON public.orders (customer_id);
 After the change, watch the mean time chart on the query page: it is computed over intervals between reports, so the effect shows after one or two reports.
 
 More on these pages: [Queries](activity.md#queries), [Locks](activity.md#locks).
+
+## Investigate a past incident {#past-incident}
+
+An alert fired at night or users complained about errors, and now everything looks fine. See what the server looked like at that moment:
+
+1. **Find the moment.** On the **Alerts** page, **History** tab, or in the **Detected changes** list on the **Change alerts** page, press **Open report** on the entry you need: the **Overview** opens as of that report. If there is no entry, click the chart on the **Overview** at the right point with the mouse, or type the time into the **Go to a moment** dialog (the report time button in the top bar).
+2. **Look at the state.** While a past moment is selected, **Queries**, **Backends**, **Locks**, **Logs**, **Diagnostics** and the other server pages show the data of that report; moving through the menu and links keeps the moment. Charts mark the report with a dashed line.
+3. **Step through neighbouring reports** with the **‹** and **›** buttons or the `[` and `]` keys; `Shift+[` and `Shift+]` move the moment by an hour. A **No report at …** warning below the bar means a gap in reports of more than 15 minutes, which is often the incident itself.
+4. **Compare with the replica.** Pick it in the server switcher in the side menu: it opens at the same moment.
+5. **Hand it over to a colleague** with the **Link to this report** from the **Go to a moment** dialog: it opens the same page at the same moment.
+6. **Return to the current state** with **Latest**.
+
+Full reports are kept for `PGSCOPE_REPORT_RETENTION_DAYS` days (14 by default), and charts and the event history for `PGSCOPE_METRICS_RETENTION_DAYS` days (90 by default), see [Retention](data.md#retention). The list of triggered alerts and the AI chat always refer to the current state. More: [Viewing a past report](ui.md#report-picker).
 
 ## Find and fix bloat {#bloat}
 

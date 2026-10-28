@@ -157,7 +157,7 @@ The **Unused** tab shows non-unique indexes that were not scanned during the cho
 | **since stats reset** | `idx_scan = 0` in the selected report |
 | **in the last day**, **in the last 7 days**, **in the last 30 days**, **in the last 90 days** | `idx_scan` in the selected report equals the value from the first stored report received no earlier than the start of the period |
 
-Unlike the **Unused indexes** check on the **Diagnostics** page, which takes only indexes larger than 1 MiB, the tab does not filter indexes by size. The start of the period is counted from the current moment, not from the report selected in the server bar.
+Unlike the **Unused indexes** check on the **Diagnostics** page, which takes only indexes larger than 1 MiB, the tab does not filter indexes by size. The start of the period is counted from the displayed report: when a past moment is selected in the server bar, from the time of that report.
 
 In the "last N days" mode the page shows "compared with the report from …" — the date of the report used for the comparison. Check it: if the server's history is shorter than the chosen period, the comparison uses the earliest stored report, and "90 days" may actually mean a few days. History is limited by the time-series retention `PGSCOPE_METRICS_RETENTION_DAYS` (90 days by default, see [Data storage](data.md#retention)).
 
@@ -232,7 +232,7 @@ Details:
 
 - If the server's history is shorter than the period, the comparison uses the earliest stored report — check the date in the caption.
 - Objects that were not in the report at the start of the period (created later) do not appear in the growth ranking.
-- The start of the period is counted from the current moment, not from the report selected in the server bar.
+- The start of the period is counted from the displayed report: when a past moment is selected in the server bar, from the time of that report.
 - Without suitable history the page shows **Nothing to rank** with the explanation **Not enough history for this period yet.**
 
 Size growth is the main tool for finding out where the disk space is going: combine it with [Tablespaces](#tablespaces) and [WAL and checkpoints](server.md#wal).
