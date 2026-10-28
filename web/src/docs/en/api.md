@@ -32,7 +32,7 @@ The API is compatible with the pgdash CLI `report`, `report-pgbouncer` and `repo
 | `pgpool` | string | `reportpgpool` | the Pgpool name in pgscope, same rules |
 | `data` | object | all | the full output of `pgmetrics -f json` — a JSON object, not a string |
 
-Other top-level fields are ignored. A request skeleton (in a real request `data` is the whole pgmetrics report; only the field pgscope always checks is shown here):
+`apikey` must come before `data` in the JSON object: pgscope checks the key before it reads the report. The pgdash CLI and pgscope-agent already send it first. Other top-level fields are ignored. A request skeleton (in a real request `data` is the whole pgmetrics report; only the field pgscope always checks is shown here):
 
 ```json
 {
@@ -52,8 +52,8 @@ From the report pgscope uses:
 
 pgscope checks a request in this order and stops at the first error:
 
-1. gzip decompression (if `Content-Encoding: gzip` is set) and JSON parsing.
-2. API key format, then a lookup of the key in the storage database.
+1. gzip decompression (if `Content-Encoding: gzip` is set) and JSON parsing. The fields before `data` may take at most 64 KiB.
+2. API key format, then a lookup of the key in the storage database. This happens when `data` starts, before the report is read, so a request without a valid key never makes pgscope read or hold a report.
 3. The names in `server`, `pgbouncer`, `pgpool`.
 4. The `data` field: a pgmetrics report with `meta.at` set and, for PgBouncer and Pgpool, the matching section.
 5. Whether the previous report of the same source is still being saved.
@@ -76,6 +76,7 @@ A successful response is status 200 with the body `{}`.
 | 200 | — (body `{}`) | report saved |
 | 400 | **Could not decompress the request body (gzip)** | `Content-Encoding: gzip` is set but the body is not gzip |
 | 400 | **Invalid request body** | the body is not JSON of the expected shape, is truncated or exceeds the size limit |
+| 400 | **The apikey field must come before the data field in the request body** | `data` comes before `apikey`, or there is no `apikey` |
 | 401 | **Invalid API key** | the key is not 22 Latin letters or digits |
 | 403 | **Unknown API key** | no such key, for example it was regenerated |
 | 503 | **Storage is temporarily unavailable** | the storage database did not answer during the key lookup |

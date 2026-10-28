@@ -181,40 +181,59 @@ func (e *endless) Read(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// C5: the API key is checked before the data member is read; oversized bodies get 413
+// readBody runs readReport on body and returns the status and whether a report slot was taken.
+func readBody(body io.Reader, gz bool) (int, bool) {
+	r := httptest.NewRequest("POST", "/api/v1/report", body)
+	if gz {
+		r.Header.Set("Content-Encoding", "gzip")
+	}
+	w, slot := httptest.NewRecorder(), false
+	readReport(w, r, &slot)
+	if slot {
+		<-reportSlots
+	}
+	return w.Code, slot
+}
+
+// C5: the API key is checked before the data member is read; a body without a valid key first
+// never takes a report slot (audit C1: four open data-first bodies held every slot)
 func TestReadReport(t *testing.T) {
 	defer func(v int64) { cfg.MaxReport = v }(cfg.MaxReport)
 	cfg.MaxReport = 1 << 20
-	read := func(body io.Reader, gz bool) (int, bool) {
-		r := httptest.NewRequest("POST", "/api/v1/report", body)
-		if gz {
-			r.Header.Set("Content-Encoding", "gzip")
-		}
-		w, slot := httptest.NewRecorder(), false
-		readReport(w, r, &slot)
-		if slot {
-			<-reportSlots
-		}
-		return w.Code, slot
-	}
 
 	rest := &endless{}
-	code, slot := read(io.MultiReader(strings.NewReader(`{"apikey": "not-a-key", "server": "s", "data": "`), rest), false)
+	code, slot := readBody(io.MultiReader(strings.NewReader(`{"apikey": "not-a-key", "server": "s", "data": "`), rest), false)
 	if code != 401 || slot || rest.n > 64<<10 {
 		t.Fatalf("bad key first: HTTP %d, slot %v, %d data bytes read", code, slot, rest.n)
 	}
-	big := `{"data": "` + strings.Repeat("a", 2<<20) + `", "apikey": "x"}`
-	if code, slot := read(strings.NewReader(big), false); code != 413 || !slot {
-		t.Fatalf("over the wire limit: HTTP %d, slot %v", code, slot)
+	rest = &endless{}
+	code, slot = readBody(io.MultiReader(strings.NewReader(`{"data": "`), rest), false)
+	if code != 400 || slot || rest.n > 64<<10 {
+		t.Fatalf("data first, body left open: HTTP %d, slot %v, %d data bytes read", code, slot, rest.n)
 	}
-	if code, _ := read(strings.NewReader(string(gzipBytes([]byte(big)))), true); code != 413 {
-		t.Fatalf("over the decompressed limit: HTTP %d", code)
-	}
-	if code, slot := read(strings.NewReader(`{"data": {"metadata": {"at": 1}}, "apikey": "not-a-key"}`), false); code != 401 || !slot {
+	if code, slot := readBody(strings.NewReader(`{"data": {"metadata": {"at": 1}}, "apikey": "not-a-key"}`), false); code != 400 || slot {
 		t.Fatalf("data before a bad key: HTTP %d, slot %v", code, slot)
 	}
-	if code, _ := read(strings.NewReader(`{"server": "`+strings.Repeat("a", 100<<10)+`"}`), false); code != 400 {
+	if code, _ := readBody(strings.NewReader(`{"server": "`+strings.Repeat("a", 100<<10)+`"}`), false); code != 400 {
 		t.Fatalf("100 KiB before data: HTTP %d", code)
+	}
+}
+
+// C5: with a valid key first, oversized bodies still get 413 (wire and decompressed limits)
+func TestReadReportLimits(t *testing.T) {
+	ctx := authDB(t)
+	defer func(v int64) { cfg.MaxReport = v }(cfg.MaxReport)
+	cfg.MaxReport = 1 << 20
+	const key = "LIMITKEYLIMITKEYLIMIT2"
+	if _, err := db.Exec(ctx, `insert into users(email, pwhash, apikey) values ('limits@example.test', 'x', $1)`, key); err != nil {
+		t.Fatal(err)
+	}
+	big := `{"apikey": "` + key + `", "data": "` + strings.Repeat("a", 2<<20) + `"}`
+	if code, slot := readBody(strings.NewReader(big), false); code != 413 || !slot {
+		t.Fatalf("over the wire limit: HTTP %d, slot %v", code, slot)
+	}
+	if code, slot := readBody(strings.NewReader(string(gzipBytes([]byte(big)))), true); code != 413 || !slot {
+		t.Fatalf("over the decompressed limit: HTTP %d, slot %v", code, slot)
 	}
 }
 

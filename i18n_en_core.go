@@ -154,6 +154,7 @@ func init() {
 		"Не удалось распаковать тело запроса (gzip)":                                "Could not decompress the request body (gzip)",
 		"Некорректное тело запроса":                                                 "Invalid request body",
 		"Некорректный API-ключ":                                                     "Invalid API key",
+		"Поле apikey должно идти в теле запроса до поля data":                       "The apikey field must come before the data field in the request body",
 		"Неизвестный API-ключ":                                                      "Unknown API key",
 		"Некорректное имя сервера":                                                  "Invalid server name",
 		"Данные не являются JSON-отчётом pgmetrics":                                 "The data is not a pgmetrics JSON report",

@@ -129,7 +129,7 @@ The **Sign up** form stays visible, but submitting it fails with **HTTP error 40
 Limitations worth knowing:
 
 - Rate tracking lives in process memory: it resets on restart and does not count failed requests. There is no global request rate limit.
-- The request body is read and parsed **before** the API key is checked. The limits are sized for large reports, so even a client without a key can make pgscope parse up to 2 GiB of data and use a lot of memory.
+- The API key of a report is checked **before** the report is read: pgscope reads at most 64 KiB of the request before the key, and a request without a valid key never takes one of the four report slots. An agent heartbeat is still read and parsed (up to 4 MiB) before its key is checked, so even a client without a key can make pgscope use a lot of memory.
 
 So on the reverse proxy, open `/api/v1/` only to the networks where collectors run, and cap the body size at what your reports need (the average report size is shown by a query in [Checking the actual size](data.md#size-check)):
 
