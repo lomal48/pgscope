@@ -32,7 +32,7 @@ The API is compatible with the pgdash CLI `report`, `report-pgbouncer` and `repo
 | `pgpool` | string | `reportpgpool` | the Pgpool name in pgscope, same rules |
 | `data` | object | all | the full output of `pgmetrics -f json` — a JSON object, not a string |
 
-Other top-level fields are ignored. A request skeleton (in a real request `data` is the whole pgmetrics report; only the field pgscope always checks is shown here):
+`apikey` must come before `data` in the JSON object: pgscope checks the key before it reads the report. The pgdash CLI and pgscope-agent already send it first. Other top-level fields are ignored. A request skeleton (in a real request `data` is the whole pgmetrics report; only the field pgscope always checks is shown here):
 
 ```json
 {
@@ -53,7 +53,7 @@ From the report pgscope uses:
 pgscope checks a request in this order and stops at the first error:
 
 1. gzip decompression (if `Content-Encoding: gzip` is set) and JSON parsing. The body is read as a stream; at most 64 KiB of JSON is allowed before the `data` field.
-2. API key format, then a lookup of the key in the storage database. If `apikey` comes before `data` in the body (the pgdash CLI and pgscope-agent send it that way), the key is checked before the report is read: a request with a bad key gets its answer without uploading the report. If `data` comes first, the key is checked after the whole body has been read.
+2. API key format, then a lookup of the key in the storage database. `apikey` must come before `data` in the body (the pgdash CLI and pgscope-agent send it that way): the key is checked before the report is read, so a request without a valid key gets its answer without uploading the report and never takes a report slot.
 3. The names in `server`, `pgbouncer`, `pgpool`.
 4. The `data` field: a pgmetrics report with `meta.at` set and, for PgBouncer and Pgpool, the matching section.
 5. Whether the previous report of the same source is still being saved.
@@ -78,6 +78,7 @@ A successful response is status 200 with the body `{}`.
 | 200 | — (body `{}`) | report saved |
 | 400 | **Could not decompress the request body (gzip)** | `Content-Encoding: gzip` is set but the body is not gzip |
 | 400 | **Invalid request body** | the body is not JSON of the expected shape, is truncated or has more than 64 KiB before the `data` field |
+| 400 | **The apikey field must come before the data field in the request body** | `data` comes before `apikey`, or there is no `apikey` |
 | 413 | **The report is larger than N MiB, the limit set by PGSCOPE_MAX_REPORT_MB on the pgscope server** | the body exceeds `PGSCOPE_MAX_REPORT_MB` (256 MiB by default) as sent or after gzip decompression |
 | 401 | **Invalid API key** | the key is not 22 Latin letters or digits |
 | 403 | **Unknown API key** | no such key, for example it was regenerated |

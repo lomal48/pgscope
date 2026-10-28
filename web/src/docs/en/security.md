@@ -119,7 +119,7 @@ What to do:
 | Measure | How it works |
 |---|---|
 | Body size | a report is limited to `PGSCOPE_MAX_REPORT_MB` (256 MiB by default) both on the wire and after gzip decompression, otherwise the answer is 413 (see [PGSCOPE_MAX_REPORT_MB](config.md#pgscope-max-report-mb)); an agent heartbeat to 4 MiB, otherwise the answer is 400; web interface requests to 1 MiB |
-| Key before the report | if `apikey` comes before `data` in the body (the pgdash CLI and pgscope-agent send it that way), the key is checked before the report is read: an invalid or unknown key gets 401 or 403 after at most 64 KiB has been read. At most 64 KiB of JSON is allowed before the `data` member, otherwise the answer is 400 |
+| Key before the report | `apikey` must come before `data` in the body (the pgdash CLI and pgscope-agent send it that way), otherwise the answer is 400. The key is checked before the report is read: an invalid or unknown key gets 401 or 403 after at most 64 KiB has been read, and a request without a valid key never takes one of the 4 report slots. At most 64 KiB of JSON is allowed before the `data` member, otherwise the answer is 400 |
 | Format checks | the key is exactly 22 Latin letters or digits; server, PgBouncer and Pgpool names use `A–Z a–z 0–9 _ . -`, 1 to 64 characters; `data` must be a pgmetrics report with the collection time set and, for PgBouncer and Pgpool, with their section |
 | Rate | a report of one source (a server or one of its PgBouncers) is accepted at most once per `PGSCOPE_MIN_REPORT_INTERVAL` seconds (60 by default), otherwise the answer is 429 |
 | Concurrency | while the previous report of the same source is being saved, a new one gets 409. At most 4 reports in total are read and stored at once; the others wait until a slot frees up or the client disconnects |
@@ -129,7 +129,7 @@ What to do:
 Limitations worth knowing:
 
 - Rate tracking lives in process memory: it resets on restart and does not count failed requests. There is no global request rate limit.
-- A client that puts `data` before `apikey` or sends an empty key is authenticated only after its report has been read, and holds one of the 4 slots all that time. By sending bodies slowly (up to 10 minutes each), even a client without a key can take all the slots and delay ingestion for everyone. Memory stays bounded by `PGSCOPE_MAX_REPORT_MB`. The pgdash CLI and pgscope-agent always send the key first.
+- An agent heartbeat is read and parsed (up to 4 MiB) **before** its key is checked, so even a client without a key can make pgscope use a lot of memory. Reports are not affected: their key is checked before the report is read.
 
 So on the reverse proxy, open `/api/v1/` only to the networks where collectors run, and cap the body size at what your reports need (the average report size is shown by a query in [Checking the actual size](data.md#size-check)):
 

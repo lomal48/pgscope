@@ -104,11 +104,11 @@ type reportReq struct {
 	Data                              json.RawMessage // stored as received
 }
 
-// readReport streams the JSON object of a report request and answers errors itself. When
-// "apikey" precedes "data" (the pgdash CLI and pgscope-agent send it first) the key is checked
-// before the large data member is read, so an unknown client cannot make pgscope buffer a
-// report; otherwise data is buffered and the key checked afterwards. Data is read only while
-// holding one of reportSlots (*slot is set; the caller releases it when done with the report).
+// readReport streams the JSON object of a report request and answers errors itself. "apikey"
+// must precede "data" (the pgdash CLI and pgscope-agent send it first): the key is checked before
+// the large data member is read, so a client without a valid key never makes pgscope buffer a
+// report or take one of reportSlots. Data is read only while holding a slot (*slot is set; the
+// caller releases it when done with the report).
 func readReport(w http.ResponseWriter, r *http.Request, slot *bool) (req reportReq, uid int64, ok bool) {
 	body, ok := reqBody(w, r, cfg.MaxReport, cfg.MaxReport)
 	if !ok {
@@ -139,7 +139,11 @@ func readReport(w http.ResponseWriter, r *http.Request, slot *bool) (req reportR
 		case "pgpool":
 			err = dec.Decode(&req.Pgpool)
 		case "data":
-			if !authed && req.APIKey != "" {
+			if !authed {
+				if req.APIKey == "" {
+					httpErr(w, 400, "Поле apikey должно идти в теле запроса до поля data")
+					return req, 0, false
+				}
 				if uid, authed = apiKeyOwner(w, r, req.APIKey); !authed {
 					return req, 0, false
 				}
