@@ -101,6 +101,14 @@ setup_pss() {
 	dbs=$(query "$1" postgres "SELECT datname FROM pg_database WHERE datallowconn AND NOT datistemplate ORDER BY 1") || return 1
 	while IFS= read -r db; do
 		[ -n "$db" ] || continue
+		# any user with CREATEDB names databases, and psql -d takes a name with = or :// for a
+		# connection string (host=elsewhere would get this superuser session); the agent skips them too
+		case $db in
+		*=* | *://*)
+			echo "$2: skipped database $db: psql would read its name as a connection string" >&2
+			continue
+			;;
+		esac
 		if [ $dry = 1 ]; then
 			echo "$2: would CREATE EXTENSION IF NOT EXISTS pg_stat_statements in $db"
 		else

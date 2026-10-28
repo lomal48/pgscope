@@ -75,6 +75,7 @@ A label error does not stop the agent: the target gets the **Error** status and 
 | `invalid database name in the label pgscope.dbs: "…"` | a database name contains `=`, whitespace control characters or `://` |
 | `invalid role name in the label pgscope.user: "…"` | the same for the role name |
 | `the label pgscope.password-file must name a secret of the agent under /run/secrets/` | the path is not inside `/run/secrets/` or not in canonical form (for example, with `..`) |
+| `the label pgscope.password-file names the agent's API key` | the file from the label holds the agent's API key |
 | `a pgbouncer container needs the label pgscope.server with the name of its PostgreSQL server` | a PgBouncer has no `pgscope.server`, or the name breaks the rule `A-Z a-z 0-9 _ . -`, up to 64 characters |
 | `unknown pgscope.kind label: …` | the value is neither `postgres` nor `pgbouncer` |
 
@@ -196,7 +197,7 @@ cd deploy/agent
 | `--password-file FILE` | `./secrets/pgscope_monitor_password` | the role password file; not empty, must not contain `$pgscope_pw$` |
 | `--role NAME` | `pgscope_monitor` | the role name, only `[a-z_][a-z0-9_]*` |
 | `--label KEY=VALUE` | `pgscope.enable=true` | the label that marks the containers |
-| `--with-pg-stat-statements` | — | run `CREATE EXTENSION IF NOT EXISTS pg_stat_statements` in every database that accepts connections |
+| `--with-pg-stat-statements` | — | run `CREATE EXTENSION IF NOT EXISTS pg_stat_statements` in every database that accepts connections; databases with `=` or `://` in the name are skipped, as the agent does |
 | `--dry-run` | — | change nothing, only show the actions (the password file must still exist) |
 | `-h`, `--help` | — | help |
 | `container…` | all running with the label | container ids or names |
@@ -462,7 +463,7 @@ To avoid this, create the database network once with `docker network create` and
       external: true
   ```
 
-- **The role password is presented to every labeled container.** Whoever can start containers with labels on the host can obtain the `pgscope_monitor` password. That is why the role must have no rights beyond `pg_monitor`. The `pgscope.password-file` label reads only files inside `/run/secrets/` in canonical form, that is, the agent's own secrets, not arbitrary files of its container.
+- **The role password is presented to every labeled container.** Whoever can start containers with labels on the host can obtain the `pgscope_monitor` password. That is why the role must have no rights beyond `pg_monitor`. The `pgscope.password-file` label reads only files inside `/run/secrets/` in canonical form, that is, the agent's own secrets, not arbitrary files of its container. If such a file holds the agent's API key, the target gets an error: otherwise the key would go to that container as a password.
 - **Protection against connection-string injection.** pgmetrics inserts database and role names into its connection string unquoted. The agent therefore rejects names containing `=`, tabs, line breaks and other whitespace control characters, or `://`: such a name could add a connection parameter (for example, another `host` that would receive the password). Databases from `pg_database` with such names are skipped: any user with `CREATEDB` can create a database. pgmetrics receives the connection parameters as flags, not as a URL.
 - **Secrets stay out of the environment, arguments and logs** when passed as files. `PGSCOPE_*` variables are not passed into the pgmetrics environment, and the password is masked in the error texts the agent sends.
 - **Encryption of database connections.** `sslmode=prefer` encrypts the connection if the server supports TLS, but does not verify the certificate. To verify it, set `PGSCOPE_AGENT_SSLMODE` or the `pgscope.sslmode` label. The agent connects to the container's IP address, so `verify-full` needs that IP address in the server certificate. The CA file can be passed with the standard `PGSSLROOTCERT` variable in the agent's environment: add it to `environment:` and mount the file into the agent container. This scenario has not been tested live.
